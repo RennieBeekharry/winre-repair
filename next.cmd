@@ -2,6 +2,8 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem Active repair command. wr.cmd always downloads a fresh copy of this file.
+set "COMMAND_VERSION=WR-2026.08.14-0041-ET"
+set "BUILD_TIME=2026-08-14 00:41 ET"
 set "OS=C:"
 set "WORK=C:\WinRERepair"
 set "PKG=%WORK%\intel167"
@@ -21,6 +23,9 @@ set "CAB=%WORK%\intel-16.7.1.1012.cab"
 cls
 echo ================================================================
 echo WINRE-REPAIR - ACTIVE COMMAND
+echo Version: %COMMAND_VERSION%
+echo Built:   %BUILD_TIME%
+echo Fetched: %date% %time%
 echo ================================================================
 
 if not exist "%OS%\Windows\System32\Config\SYSTEM" (
@@ -37,7 +42,10 @@ if not exist "%CURL%" (
 if not exist "%WORK%" md "%WORK%" >nul 2>&1
 if not exist "%PKG%" md "%PKG%" >nul 2>&1
 if exist "H:\" if not exist "%USBLOG%" md "%USBLOG%" >nul 2>&1
->"%LOG%" echo [%date% %time%] START active repair
+>"%LOG%" echo [%date% %time%] START %COMMAND_VERSION% built %BUILD_TIME%
+call :LOG "Version: %COMMAND_VERSION%"
+call :LOG "Build time: %BUILD_TIME%"
+call :LOG "Fetched/executed: %date% %time%"
 call :LOG "Target: %OS%\Windows"
 call :LOG "GitHub command channel active"
 
@@ -154,6 +162,7 @@ call :COPYLOGS
 echo.
 echo ================================================================
 echo SUCCESS - DRIVER PACKAGE INSTALLED
+echo Version: %COMMAND_VERSION%
 echo Log: %LOG%
 if exist "H:\" echo USB copy: %USBLOG%\winre-repair.log
 echo Rebooting in 10 seconds.
@@ -212,6 +221,7 @@ call :COPYLOGS
 echo.
 echo ================================================================
 echo REPAIR STOPPED - NO REBOOT
+echo Version: %COMMAND_VERSION%
 echo !FAILMSG!
 echo Error: !FAILCODE!
 echo Log: %LOG%
