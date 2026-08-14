@@ -8,7 +8,7 @@ rem WR_TARGET=Recovery tooling under C:\WinRERepair only; no Windows boot files 
 rem WR_CONSEQUENCE=Records Terms acceptance and establishes a repository-scoped outbound GitHub App credential.
 rem WR_ROLLBACK=Local RescueMeAI authorization files can be removed later; no Windows recovery changes are performed.
 
-set "COMMAND_VERSION=RMAI-2026.08.14-SECURE-PAIRING-7"
+set "COMMAND_VERSION=RMAI-2026.08.14-SECURE-PAIRING-8"
 set "PRODUCT=RescueMeAI"
 set "DESCRIPTION=AI-ASSISTED WINDOWS RECOVERY"
 set "TERMS_VERSION=2026-08-14"
@@ -31,9 +31,6 @@ set "PING=X:\Windows\System32\ping.exe"
 set "WPEUTIL=X:\Windows\System32\wpeutil.exe"
 set "MODE=C:\Windows\System32\mode.com"
 if not exist "%MODE%" set "MODE=mode"
-set "UI_CMD=%ComSpec%"
-if not defined UI_CMD set "UI_CMD=X:\Windows\System32\cmd.exe"
-if not exist "%UI_CMD%" set "UI_CMD=C:\Windows\System32\cmd.exe"
 set "APIHOST=api.github.com"
 set "WEBHOST=github.com"
 set "LOGREPO=RennieBeekharry/winre-repair-logs"
@@ -41,14 +38,16 @@ set "GITHUB_APP_ID=4595411"
 set "GITHUB_APP_CLIENT_ID=Iv23lif9UoXW4QvUh8tJ"
 set "GITHUB_REPOSITORY_ID=1333818657"
 
-rem UI geometry. Callers use semantic types; :UI_LINE is the only function
-rem that maps semantic meaning to console color attributes.
+rem WinRE UI geometry. Screen theme is selected centrally by :UI_THEME.
 set "UI_WIDTH=96"
 set "UI_TEXT_WIDTH=92"
 set "UI_BORDER================================================================================================="
 set "UI_RULE=------------------------------------------------------------------------------------------------"
 set "UI_SPACES=                                                                                                    "
-set "UI_TMP=%TEMP%\rmai-pair-ui-%RANDOM%%RANDOM%.txt"
+
+rem Take ownership of the console title so repeated launcher invocations do
+rem not accumulate C:\wr.cmd text in the Windows title bar.
+title RescueMeAI - Windows Recovery
 
 rem The persistent C:\wr.cmd launcher downloaded this exact build over HTTPS.
 rem Current-run Internet access is therefore already proven.
@@ -90,8 +89,6 @@ call :REQUIRE "%CERTUTIL%" "certutil.exe"
 if errorlevel 1 goto :FAIL
 call :REQUIRE "%PING%" "ping.exe"
 if errorlevel 1 goto :FAIL
-call :REQUIRE "%UI_CMD%" "cmd.exe"
-if errorlevel 1 goto :FAIL
 
 rem Direct-IP ping is secondary evidence only. The successful launcher HTTPS
 rem fetch remains authoritative for the CONNECTED header state.
@@ -100,9 +97,9 @@ if exist "%PING%" (
   if errorlevel 1 if exist "%WPEUTIL%" "%WPEUTIL%" InitializeNetwork >nul 2>&1
 )
 
-rem -------------------------------------------------------------------------
-rem TERMS ACCEPTANCE - embedded so no secondary public download is required.
-rem -------------------------------------------------------------------------
+rem =========================================================================
+rem TERMS ACCEPTANCE
+rem =========================================================================
 set "STAGE=TERMS_ACCEPTANCE"
 set "COMPONENT=embedded Terms gate"
 set "TERMS_STATUS=CHECKING"
@@ -119,36 +116,36 @@ if /i "!ALREADY_ACCEPTED!"=="YES" if /i "!ACCEPTED_VERSION!"=="%TERMS_VERSION%" 
   goto :TERMS_DONE
 )
 
-call :UI_HEADER "TERMS AND RECOVERY RISK ACCEPTANCE" "REPAIR WRITE - NON-DESTRUCTIVE"
-call :UI_SECTION WARNING "TERMS AND RECOVERY RISK ACCEPTANCE"
-call :UI_LINE LABEL "Terms version: %TERMS_VERSION%"
+call :UI_HEADER WARNING "TERMS AND RECOVERY RISK ACCEPTANCE" "REPAIR WRITE - NON-DESTRUCTIVE"
+call :UI_SECTION "TERMS AND RECOVERY RISK ACCEPTANCE"
+call :UI_LINE "Terms version: %TERMS_VERSION%"
 echo.
-call :UI_WRAP INFO "RescueMeAI is system-recovery software. Recovery actions can cause data loss, corruption, downtime, loss of bootability, or the need for reset, reinstall, professional service, or hardware repair."
+call :UI_WRAP "RescueMeAI is system-recovery software. Recovery actions can cause data loss, corruption, downtime, loss of bootability, or the need for reset, reinstall, professional service, or hardware repair."
 echo.
-call :UI_LINE INFO "By continuing, you acknowledge and agree that:"
-call :UI_WRAP INFO "- Recovery results are NOT guaranteed."
-call :UI_WRAP INFO "- AI-generated recommendations can be incorrect."
-call :UI_WRAP INFO "- Important data and recovery keys should be backed up where possible."
-call :UI_WRAP INFO "- Recovery-relevant technical evidence may be stored locally and, after authenticated reporting is enabled, in the configured private recovery evidence backend."
-call :UI_WRAP INFO "- RescueMeAI is provided AS IS to the maximum extent permitted by law."
-call :UI_WRAP INFO "- You assume the risks of using recovery software and liability is limited to the maximum extent permitted by applicable law."
-call :UI_WRAP INFO "- Mandatory statutory or consumer rights remain where law does not permit waiver or exclusion."
-call :UI_SECTION INFO "LEGAL DOCUMENTS"
-call :UI_LINE LABEL "Legal repository: %LEGAL_BASE%"
-call :UI_LINE LABEL "Legal landing file: %LEGAL_FILE%"
-call :UI_SECTION WARNING "IMPORTANT"
-call :UI_WRAP WARNING "Typing ACCEPT agrees to the general RescueMeAI legal terms. It does NOT authorize a destructive repair. Destructive actions require a separate, action-specific local authorization when RescueMeAI permits them."
-call :UI_SECTION INSTRUCTION "ACTION REQUIRED"
-call :UI_WRAP INSTRUCTION "Type exactly ACCEPT to agree and continue. Anything else stops RescueMeAI safely without starting recovery."
+call :UI_LINE "By continuing, you acknowledge and agree that:"
+call :UI_WRAP "- Recovery results are NOT guaranteed."
+call :UI_WRAP "- AI-generated recommendations can be incorrect."
+call :UI_WRAP "- Important data and recovery keys should be backed up where possible."
+call :UI_WRAP "- Recovery-relevant technical evidence may be stored locally and, after authenticated reporting is enabled, in the configured private recovery evidence backend."
+call :UI_WRAP "- RescueMeAI is provided AS IS to the maximum extent permitted by law."
+call :UI_WRAP "- You assume the risks of using recovery software and liability is limited to the maximum extent permitted by applicable law."
+call :UI_WRAP "- Mandatory statutory or consumer rights remain where law does not permit waiver or exclusion."
+call :UI_SECTION "LEGAL DOCUMENTS"
+call :UI_LINE "Legal repository: %LEGAL_BASE%"
+call :UI_LINE "Legal landing file: %LEGAL_FILE%"
+call :UI_SECTION "IMPORTANT"
+call :UI_WRAP "Typing ACCEPT agrees to the general RescueMeAI legal terms. It does NOT authorize a destructive repair. Destructive actions require a separate, action-specific local authorization when RescueMeAI permits them."
+call :UI_SECTION "ACTION REQUIRED"
+call :UI_WRAP "Type exactly ACCEPT to agree and continue. Anything else stops RescueMeAI safely and returns you to the command prompt."
 echo.
 set "TERMS_TYPED="
 set /p "TERMS_TYPED=ACCEPT TERMS OF USE: "
 if not "!TERMS_TYPED!"=="ACCEPT" (
-  set "TERMS_STATUS=DECLINED"
-  call :WRITE_REPORT WARNING 40 "RescueMeAI Terms were not accepted. No recovery or authorization action was performed."
+  set "TERMS_STATUS=NOT_ACCEPTED"
+  call :WRITE_REPORT WARNING 40 "The required ACCEPT phrase was not entered. RescueMeAI stopped safely before authorization or recovery."
   call :WRITE_DETAILS
   call :USB_COPY
-  goto :WARNING
+  goto :TERMS_NOT_ACCEPTED
 )
 >"%ACCEPTANCE_RECORD%" echo accepted=YES
 >>"%ACCEPTANCE_RECORD%" echo terms_version=%TERMS_VERSION%
@@ -161,9 +158,9 @@ set "TERMS_STATUS=ACCEPTED"
 :TERMS_DONE
 call :WRITE_DETAILS
 
-rem -------------------------------------------------------------------------
+rem =========================================================================
 rem SECURE GITHUB APP DEVICE FLOW
-rem -------------------------------------------------------------------------
+rem =========================================================================
 set "STAGE=GITHUB_APP_DEVICE_CODE"
 set "COMPONENT=github.com/login/device/code"
 set "AUTH_STATUS=REQUESTING_DEVICE_CODE"
@@ -191,18 +188,16 @@ if errorlevel 1 set "EXPIRES_IN=900"
 call :JSON_VALUE "%WORK%\github-device.json" "interval" POLL_INTERVAL
 if errorlevel 1 set "POLL_INTERVAL=5"
 
-call :UI_HEADER "SECURE GITHUB APP PAIRING" "REPAIR WRITE - AUTHORIZATION ONLY"
-call :UI_SECTION INFO "SECURE GITHUB APP PAIRING"
-call :UI_WRAP INFO "Private recovery evidence is restricted to %LOGREPO%."
-call :UI_SECTION INSTRUCTION "ON YOUR PHONE"
-call :UI_LINE INSTRUCTION "Open: !VERIFY_URI!"
-call :UI_LINE INSTRUCTION "Enter this one-time code:"
+call :UI_HEADER INFO "SECURE GITHUB APP PAIRING" "REPAIR WRITE - AUTHORIZATION ONLY"
+call :UI_SECTION "SECURE GITHUB APP PAIRING"
+call :UI_WRAP "Private recovery evidence is restricted to %LOGREPO%."
+call :UI_SECTION "ON YOUR PHONE"
+call :UI_LINE "Open: !VERIFY_URI!"
+call :UI_LINE "Enter this one-time code:"
 echo.
-call :UI_CENTER PROMPT "!USER_CODE!"
+call :UI_CENTER "!USER_CODE!"
 echo.
-call :UI_WRAP WARNING "[WAITING] Approve the RescueMeAI authorization request on your phone. This PC will continue automatically after approval. Do not close this window."
-call :UI_LINE LABEL "Legal repository: %LEGAL_BASE%"
-call :UI_LINE LABEL "Legal landing file: %LEGAL_FILE%"
+call :UI_WRAP "[WAITING] Approve the RescueMeAI authorization request on your phone. This PC will continue automatically after approval. Do not close this window."
 set "AUTH_STATUS=WAITING_FOR_USER"
 call :WRITE_DETAILS
 
@@ -260,98 +255,121 @@ call :WRITE_REPORT PASS 0 "RescueMeAI private authenticated reporting is online.
 call :WRITE_DETAILS
 call :USB_COPY
 
-call :UI_HEADER "PRIVATE REPORTING ONLINE" "NO NEW ACTION"
-call :UI_SECTION PASS "[PASS] PRIVATE REPORTING ONLINE"
-call :UI_WRAP PASS "RescueMeAI is paired successfully and can send authenticated private recovery reports to the configured evidence repository."
-call :UI_WRAP INFO "No Windows repair, boot, disk, partition, filesystem, or registry repair was performed by this pairing build."
-call :UI_SECTION INSTRUCTION "WHAT YOU SHOULD DO"
-call :UI_WRAP INSTRUCTION "Reply to ChatGPT with exactly: pass"
-call :UI_SECTION INFO "ADDITIONAL INFORMATION REQUIRED"
-call :UI_LINE INFO "None"
-call :UI_SECTION INSTRUCTION "ADDITIONAL INSTRUCTIONS"
-call :UI_WRAP INSTRUCTION "Do not rerun C:\wr.cmd unless RescueMeAI asks you to."
-call :UI_LINE MUTED "%UI_BORDER%"
+call :UI_HEADER PASS "PRIVATE REPORTING ONLINE" "NO NEW ACTION"
+call :UI_SECTION "[PASS] PRIVATE REPORTING ONLINE"
+call :UI_WRAP "RescueMeAI is paired successfully and can send authenticated private recovery reports to the configured evidence repository."
+call :UI_WRAP "No Windows repair, boot, disk, partition, filesystem, or registry repair was performed by this pairing build."
+call :UI_SECTION "WHAT YOU SHOULD DO"
+call :UI_WRAP "Reply to ChatGPT with exactly: pass"
+call :UI_SECTION "ADDITIONAL INFORMATION REQUIRED"
+call :UI_LINE "None"
+call :UI_SECTION "ADDITIONAL INSTRUCTIONS"
+call :UI_WRAP "Do not rerun C:\wr.cmd unless RescueMeAI asks you to."
+call :UI_LINE "%UI_BORDER%"
 exit /b 0
 
-:WARNING
-call :UI_HEADER "TERMS NOT ACCEPTED" "NO RECOVERY ACTION"
-call :UI_SECTION WARNING "[WARNING] RESCUEMEAI DID NOT START"
-call :UI_WRAP WARNING "The RescueMeAI Terms of Use were not accepted. No authorization or recovery action was performed."
-call :UI_SECTION INSTRUCTION "WHAT YOU SHOULD DO"
-call :UI_WRAP INSTRUCTION "Reply to ChatGPT with exactly: warning"
-call :UI_SECTION INFO "ADDITIONAL INFORMATION REQUIRED"
-call :UI_LINE INFO "None"
-call :UI_LINE MUTED "%UI_BORDER%"
-pause >nul
+:TERMS_NOT_ACCEPTED
+call :UI_HEADER WARNING "TERMS NOT ACCEPTED" "NO RECOVERY ACTION"
+call :UI_SECTION "[WARNING] RESCUEMEAI STOPPED SAFELY"
+call :UI_WRAP "The required phrase ACCEPT was not entered exactly, so RescueMeAI did not record acceptance of the Terms of Use."
+call :UI_SECTION "WHAT HAPPENED"
+call :UI_LINE "Terms acceptance       : NOT RECORDED"
+call :UI_LINE "GitHub App authorization: NOT STARTED"
+call :UI_LINE "Private reporting       : NOT STARTED"
+call :UI_LINE "Windows recovery actions: NOT STARTED"
+call :UI_LINE "Destructive actions     : NONE"
+call :UI_LINE "Windows recovery state  : NOT CHANGED"
+call :UI_LINE "RescueMeAI local logs    : UPDATED"
+call :UI_SECTION "WHY RESCUEMEAI STOPPED"
+call :UI_WRAP "RescueMeAI requires the exact word ACCEPT before it can continue beyond the legal acceptance gate. Any other entry is treated as a safe decline or cancellation."
+call :UI_SECTION "WHAT HAPPENS NEXT"
+call :UI_WRAP "RescueMeAI is exiting now and returning control to the Windows Recovery command prompt."
+call :UI_WRAP "If you want to start again later, run: C:\wr.cmd"
+call :UI_SECTION "ADDITIONAL INFORMATION REQUIRED"
+call :UI_LINE "None"
+call :UI_LINE "%UI_BORDER%"
+echo.
+call :UI_LINE "Returning to command prompt..."
+color 07 >nul 2>&1
+title Command Prompt
 exit /b 40
 
 :FAIL
 call :WRITE_REPORT FAIL "!FAIL_RC!" "!FAIL_REASON!"
 call :WRITE_DETAILS
 call :USB_COPY
-call :UI_HEADER "SECURE PAIRING FAILED" "NO RECOVERY ACTION"
-call :UI_SECTION ERROR "[FAIL] RESCUEMEAI SECURE PAIRING FAILED"
-call :UI_LINE LABEL "Stage        : !STAGE!"
-call :UI_LINE LABEL "Component    : !COMPONENT!"
-call :UI_LINE ERROR "Return code  : !FAIL_RC!"
-call :UI_LINE ERROR "Component RC : !COMPONENT_RC!"
-call :UI_LINE LABEL "Terms        : !TERMS_STATUS!"
-call :UI_LINE LABEL "GitHub auth  : !AUTH_STATUS!"
-call :UI_LINE LABEL "Auth HTTP    : !AUTH_HTTP!"
-call :UI_LINE LABEL "Auth curl RC : !AUTH_CURL_RC!"
-call :UI_LINE LABEL "Report upload: !UPLOAD_STATUS!"
-call :UI_LINE LABEL "Upload HTTP  : !UPLOAD_HTTP!"
-call :UI_LINE LABEL "Upload curl  : !UPLOAD_CURL_RC!"
-call :UI_SECTION ERROR "REASON"
-call :UI_WRAP ERROR "!FAIL_REASON!"
-call :UI_SECTION INSTRUCTION "WHAT YOU SHOULD DO"
-call :UI_WRAP INSTRUCTION "Reply to ChatGPT with exactly: fail"
-call :UI_SECTION INFO "ADDITIONAL INFORMATION REQUIRED"
-call :UI_WRAP INFO "Screenshot this exact screen only if private reporting is not online."
-call :UI_WRAP WARNING "Nothing destructive was attempted."
-call :UI_LINE MUTED "%UI_BORDER%"
+call :UI_HEADER ERROR "SECURE PAIRING FAILED" "NO RECOVERY ACTION"
+call :UI_SECTION "[FAIL] RESCUEMEAI SECURE PAIRING FAILED"
+call :UI_LINE "Stage        : !STAGE!"
+call :UI_LINE "Component    : !COMPONENT!"
+call :UI_LINE "Return code  : !FAIL_RC!"
+call :UI_LINE "Component RC : !COMPONENT_RC!"
+call :UI_LINE "Terms        : !TERMS_STATUS!"
+call :UI_LINE "GitHub auth  : !AUTH_STATUS!"
+call :UI_LINE "Auth HTTP    : !AUTH_HTTP!"
+call :UI_LINE "Auth curl RC : !AUTH_CURL_RC!"
+call :UI_LINE "Report upload: !UPLOAD_STATUS!"
+call :UI_LINE "Upload HTTP  : !UPLOAD_HTTP!"
+call :UI_LINE "Upload curl  : !UPLOAD_CURL_RC!"
+call :UI_SECTION "REASON"
+call :UI_WRAP "!FAIL_REASON!"
+call :UI_SECTION "WHAT YOU SHOULD DO"
+call :UI_WRAP "Reply to ChatGPT with exactly: fail"
+call :UI_SECTION "ADDITIONAL INFORMATION REQUIRED"
+call :UI_WRAP "Screenshot this exact screen only if private reporting is not online."
+call :UI_WRAP "Nothing destructive was attempted."
+call :UI_LINE "%UI_BORDER%"
 pause >nul
 exit /b !FAIL_RC!
 
 rem =========================================================================
-rem CENTRAL UI RENDERER
+rem CENTRAL WINRE UI RENDERER
 rem =========================================================================
 :UI_SETUP
 "%MODE%" con: cols=100 lines=50 >nul 2>&1
 exit /b 0
 
+:UI_THEME
+rem One authoritative semantic screen-theme mapping for WinRE.
+set "UI_THEME=%~1"
+set "UI_COLOR=07"
+if /i "!UI_THEME!"=="INFO" set "UI_COLOR=0B"
+if /i "!UI_THEME!"=="PASS" set "UI_COLOR=0A"
+if /i "!UI_THEME!"=="SUCCESS" set "UI_COLOR=0A"
+if /i "!UI_THEME!"=="WARNING" set "UI_COLOR=0E"
+if /i "!UI_THEME!"=="ERROR" set "UI_COLOR=0C"
+if /i "!UI_THEME!"=="FAIL" set "UI_COLOR=0C"
+if /i "!UI_THEME!"=="NEUTRAL" set "UI_COLOR=07"
+color !UI_COLOR! >nul 2>&1
+exit /b 0
+
 :UI_HEADER
-set "UI_STEP=%~1"
-set "UI_SAFETY=%~2"
+set "UI_THEME_REQUEST=%~1"
+set "UI_STEP=%~2"
+set "UI_SAFETY=%~3"
+call :UI_THEME "!UI_THEME_REQUEST!"
 cls
-call :UI_LINE HEADER "%UI_BORDER%"
-call :UI_CENTER HEADER "RESCUEMEAI"
-call :UI_CENTER HEADER "%DESCRIPTION%"
-call :UI_LINE HEADER "%UI_BORDER%"
-call :UI_LINE LABEL "Version      : %COMMAND_VERSION%"
-if /i "%INTERNET_STATUS%"=="CONNECTED" (
-  call :UI_LINE PASS "Internet     : [CONNECTED]"
-) else if /i "%INTERNET_STATUS%"=="NOT CONNECTED" (
-  call :UI_LINE ERROR "Internet     : [NOT CONNECTED]"
-) else (
-  call :UI_LINE WARNING "Internet     : [%INTERNET_STATUS%]"
-)
-call :UI_LINE INFO "Current Step : !UI_STEP!"
-call :UI_LINE LABEL "Safety       : !UI_SAFETY!"
-call :UI_LINE LABEL "Legal        : %LEGAL_BASE%"
-call :UI_LINE LABEL "Legal file   : %LEGAL_FILE%"
-call :UI_LINE HEADER "%UI_BORDER%"
+call :UI_LINE "%UI_BORDER%"
+call :UI_CENTER "RESCUEMEAI"
+call :UI_CENTER "%DESCRIPTION%"
+call :UI_LINE "%UI_BORDER%"
+call :UI_LINE "Version      : %COMMAND_VERSION%"
+call :UI_LINE "Internet     : [%INTERNET_STATUS%]"
+call :UI_LINE "Current Step : !UI_STEP!"
+call :UI_LINE "Safety       : !UI_SAFETY!"
+call :UI_LINE "Legal        : %LEGAL_BASE%"
+call :UI_LINE "Legal file   : %LEGAL_FILE%"
+call :UI_LINE "%UI_BORDER%"
 exit /b 0
 
 :UI_SECTION
 echo.
-call :UI_LINE "%~1" "%~2"
-call :UI_LINE MUTED "%UI_RULE%"
+call :UI_LINE "%~1"
+call :UI_LINE "%UI_RULE%"
 exit /b 0
 
 :UI_WRAP
-set "UI_WRAP_TYPE=%~1"
-set "UI_WRAP_TEXT=%~2"
+set "UI_WRAP_TEXT=%~1"
 set "UI_WRAP_LINE="
 for %%W in (!UI_WRAP_TEXT!) do (
   if not defined UI_WRAP_LINE (
@@ -360,51 +378,31 @@ for %%W in (!UI_WRAP_TEXT!) do (
     set "UI_WRAP_CAND=!UI_WRAP_LINE! %%W"
     call :STRLEN "!UI_WRAP_CAND!" UI_WRAP_LEN
     if !UI_WRAP_LEN! GTR %UI_TEXT_WIDTH% (
-      call :UI_LINE "!UI_WRAP_TYPE!" "!UI_WRAP_LINE!"
+      call :UI_LINE "!UI_WRAP_LINE!"
       set "UI_WRAP_LINE=%%W"
     ) else (
       set "UI_WRAP_LINE=!UI_WRAP_CAND!"
     )
   )
 )
-if defined UI_WRAP_LINE call :UI_LINE "!UI_WRAP_TYPE!" "!UI_WRAP_LINE!"
+if defined UI_WRAP_LINE call :UI_LINE "!UI_WRAP_LINE!"
 if not defined UI_WRAP_LINE echo.
 exit /b 0
 
 :UI_CENTER
-set "UI_CENTER_TYPE=%~1"
-set "UI_CENTER_TEXT=%~2"
+set "UI_CENTER_TEXT=%~1"
 call :STRLEN "!UI_CENTER_TEXT!" UI_CENTER_LEN
 set /a UI_CENTER_PAD=(UI_WIDTH-UI_CENTER_LEN)/2
 if !UI_CENTER_PAD! LSS 0 set "UI_CENTER_PAD=0"
 set "UI_CENTER_LINE=!UI_SPACES:~0,%UI_CENTER_PAD%!!UI_CENTER_TEXT!"
-call :UI_LINE "!UI_CENTER_TYPE!" "!UI_CENTER_LINE!"
+call :UI_LINE "!UI_CENTER_LINE!"
 exit /b 0
 
 :UI_LINE
-rem This is the only semantic-to-color mapping in the bootstrap.
-rem Pairing-6 proved FINDSTR /A rendered monochrome in this WinRE console,
-rem so Pairing-7 emits each semantic line through child CMD /T:<color>.
-set "UI_SEM=%~1"
-set "UI_TEXT=%~2"
-set "UI_ATTR=07"
-if /i "!UI_SEM!"=="HEADER" set "UI_ATTR=0B"
-if /i "!UI_SEM!"=="INFO" set "UI_ATTR=09"
-if /i "!UI_SEM!"=="PASS" set "UI_ATTR=0A"
-if /i "!UI_SEM!"=="SUCCESS" set "UI_ATTR=0A"
-if /i "!UI_SEM!"=="WARNING" set "UI_ATTR=0E"
-if /i "!UI_SEM!"=="ERROR" set "UI_ATTR=0C"
-if /i "!UI_SEM!"=="FAIL" set "UI_ATTR=0C"
-if /i "!UI_SEM!"=="INSTRUCTION" set "UI_ATTR=0F"
-if /i "!UI_SEM!"=="PROMPT" set "UI_ATTR=0D"
-if /i "!UI_SEM!"=="MUTED" set "UI_ATTR=08"
-if /i "!UI_SEM!"=="LABEL" set "UI_ATTR=07"
+set "UI_TEXT=%~1"
 call :STRLEN "!UI_TEXT!" UI_PRINT_LEN
 if !UI_PRINT_LEN! GTR %UI_WIDTH% set "UI_TEXT=!UI_TEXT:~0,%UI_WIDTH%!"
->"%UI_TMP%" echo(!UI_TEXT!
-"%UI_CMD%" /d /q /t:!UI_ATTR! /c type "%UI_TMP%" 2>nul
-if errorlevel 1 type "%UI_TMP%"
-del /f /q "%UI_TMP%" >nul 2>&1
+echo(!UI_TEXT!
 exit /b 0
 
 :STRLEN
