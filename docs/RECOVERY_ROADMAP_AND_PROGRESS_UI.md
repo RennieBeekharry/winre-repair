@@ -1,10 +1,10 @@
 # RescueMeAI™ Recovery Roadmap and Progress UI
 
-**Standard version:** 2026-08-14.1
+**Standard version:** 2026-08-14.2
 
-RescueMeAI must never leave a user guessing whether recovery is progressing, stalled, waiting for ChatGPT, waiting for the user, or approaching a more invasive recovery tier.
+RescueMeAI must never leave a user guessing whether recovery is progressing, stalled, waiting for ChatGPT/support, waiting for the user, or approaching a more invasive recovery tier.
 
-This document defines the canonical roadmap and progress presentation for RescueMeAI.
+This document defines the canonical roadmap, readiness, progress, and user-action presentation for RescueMeAI.
 
 ## 1. UX principle
 
@@ -18,41 +18,110 @@ At every meaningful point, the user should be able to answer these questions fro
 4. Where are we in the overall recovery plan?
 5. What is likely to happen next?
 6. Is Windows being changed right now?
-7. Does the user need to do anything?
-8. How can the user stop safely?
+7. What is the backup status?
+8. What is the recovery-media status?
+9. Does the user need to do anything?
+10. How can the user stop safely?
 
-## 2. Two separate progress models
+## 2. Three visible state models
 
-RescueMeAI MUST NOT pretend that an entire repair has a deterministic completion time. Diagnosis is branching work: a failed test can add, remove, or reorder later recovery actions.
-
-Therefore RescueMeAI displays two different progress indicators.
+RescueMeAI displays three separate but coordinated status models.
 
 ### 2.1 Recovery Roadmap Progress
 
-This represents progress through the **current recovery plan**, not a guaranteed time-to-fix.
+This represents progress through the **current evidence-based recovery plan**, not a guaranteed time-to-fix and not a probability of success.
+
+Canonical roadmap:
+
+1. Hardware Safety
+2. Evidence + Windows Diagnostics
+3. Built-in Windows Repair
+4. Boot Test / Reassess
+5. Targeted Repair
+6. Advanced Offline Repair
+7. Restore / Rollback
+8. Repair Reinstall
+9. Reset Windows
+10. Clean Reinstall
 
 Example:
 
 ```text
-RECOVERY ROADMAP                         Stage 5 of 9
-Plan progress: [############--------] 60% (estimated)
+RECOVERY ROADMAP                         Stage 3 of 10
+Plan progress: [######--------------] 30% (estimated)
 
-  [PASS]  1. Hardware safety checks
-  [PASS]  2. Logs and failure classification
-  [PASS]  3. Backup readiness
-  [PASS]  4. Recovery source / media readiness
-  [NOW ]  5. Targeted least-invasive repair
-  [NEXT]  6. Offline Windows repair
-  [    ]  7. Restore / rollback
-  [LOCK]  8. Reset / preserve files
-  [LOCK]  9. Clean reinstall - LAST RESORT
+[PASS]  1. Hardware Safety
+[PASS]  2. Evidence + Windows Diagnostics
+[NOW ]  3. Built-in Windows Repair
+[NEXT]  4. Boot Test / Reassess
+[    ]  5. Targeted Repair
+[    ]  6. Advanced Offline Repair
+[    ]  7. Restore / Rollback
+[LOCK]  8. Repair Reinstall
+[LOCK]  9. Reset Windows
+[LOCK] 10. Clean Reinstall - LAST RESORT
 ```
 
-The roadmap percentage is an **estimated plan-completion indicator**. It may move backward or be recalculated if new evidence changes the recovery branch. The UI must say `estimated` when displaying this percentage.
+The roadmap percentage is an **estimated plan-completion indicator**. Diagnosis is branching work, so the percentage may be recalculated or move backward when new evidence changes the plan.
 
-Roadmap progress must never be presented as the probability that the PC will be fixed.
+Roadmap progress must never be presented as:
 
-### 2.2 Current Task Progress
+- the probability that the PC will be fixed;
+- a promise that every remaining stage will be required;
+- a whole-session time estimate.
+
+### 2.2 Safety Readiness
+
+Backup and recovery media are adaptive gates shown alongside the roadmap rather than mandatory fixed stages.
+
+Canonical display:
+
+```text
+SAFETY READINESS
+
+Backup        : RECOMMENDED
+Recovery USB  : NOT NEEDED YET
+Windows change: NONE
+```
+
+Allowed backup states:
+
+- `NOT REQUIRED YET`
+- `RECOMMENDED`
+- `STRONGLY RECOMMENDED`
+- `REQUIRED`
+
+Allowed recovery-media states:
+
+- `NOT NEEDED YET`
+- `RECOMMENDED`
+- `PREPARING`
+- `READY`
+- `REQUIRED`
+
+Allowed Windows change levels:
+
+- `NONE`
+- `READ ONLY`
+- `REPAIR WRITE`
+- `DESTRUCTIVE`
+
+The readiness block must include a short reason whenever a state escalates to `STRONGLY RECOMMENDED` or `REQUIRED`.
+
+Example:
+
+```text
+SAFETY READINESS
+
+Backup        : REQUIRED BEFORE CONTINUING
+Reason        : The next step can materially alter filesystem or boot-critical state.
+Recovery USB  : READY
+Windows change: REPAIR WRITE
+```
+
+If suspected hardware failure raises data-loss risk, backup can jump directly to `REQUIRED` even when the core roadmap is still at an early stage.
+
+### 2.3 Current Task Progress
 
 This is exact or evidence-based progress for the operation currently executing.
 
@@ -64,7 +133,8 @@ When measurable, show:
 - elapsed time;
 - current transfer/processing rate where meaningful;
 - ETA derived from observed progress;
-- retry count when relevant.
+- retry count when relevant;
+- last visible activity/heartbeat for long-running work.
 
 Example:
 
@@ -77,12 +147,9 @@ Data     : 4.83 / 7.19 GiB
 Speed    : 18.4 MiB/s
 Elapsed  : 00:05:42
 ETA      : about 00:02:50
-
-Windows changes: NONE
-PLEASE WAIT - no action is required right now.
 ```
 
-For operations whose tools provide native percentages (for example DISM or SFC), RescueMeAI should display the native operation progress where practical rather than inventing its own percentage.
+For operations that expose their own trustworthy progress, such as DISM or SFC, RescueMeAI should display the native operation progress where practical rather than inventing a separate percentage.
 
 ## 3. No fake ETA
 
@@ -99,59 +166,69 @@ Good examples:
 When an ETA cannot be supported, say so plainly:
 
 ```text
-ETA: Not available yet - waiting for diagnostic result.
+ETA: Not available yet - result dependent.
 ```
 
-Do not display arbitrary countdowns for diagnosis, boot testing, failure classification, or the entire recovery session.
+Do not display arbitrary countdowns for:
 
-## 4. Canonical recovery roadmap
+- diagnosis;
+- boot testing;
+- failure classification;
+- waiting for a user response;
+- waiting for a remote/AI decision;
+- the entire recovery session.
 
-The default RescueMeAI roadmap follows least-invasive-first escalation:
+## 4. Roadmap behavior
 
-1. **Safety and hardware triage**
-   - detect disks, Windows installation, firmware mode, encryption state and obvious hardware/storage problems;
-   - stop repair escalation and prioritize backup if evidence suggests physical media failure.
+The roadmap is adaptive.
 
-2. **Evidence and logs**
-   - collect Startup Repair, servicing, boot, driver, filesystem and other relevant evidence;
-   - classify the likely subsystem before changing it.
+RescueMeAI may:
 
-3. **Backup readiness**
-   - estimate backup requirements;
-   - identify or recommend an appropriate separate backup device;
-   - establish backup status before higher-risk write operations.
+- mark a stage `SKIP` when evidence proves it is unnecessary;
+- insert a diagnostic sub-stage;
+- return to an earlier stage after a boot test produces new evidence;
+- prepare backup or recovery media opportunistically without falsely marking them as completed repair stages;
+- stop escalation immediately when Windows is restored to a healthy bootable state.
 
-4. **Recovery source and media readiness**
-   - identify an existing recovery USB or create one safely;
-   - download and verify source files;
-   - validate boot/recovery assets before relying on them.
+The system must not blindly execute all ten stages in order.
 
-5. **Targeted least-invasive repair**
-   - make the smallest reversible change supported by evidence;
-   - journal the change and test the result.
+## 5. Windows-native repair visibility
 
-6. **Offline Windows repair**
-   - component-store/system-file repair, boot repair or other supported offline repair using validated sources and targets;
-   - avoid forcing incompatible sources.
+Supported Windows diagnostics and repair mechanisms appear early in the roadmap.
 
-7. **Restore / rollback**
-   - System Restore, update rollback, driver rollback, known-good configuration or image restore when available and appropriate.
+Examples of user-facing task names:
 
-8. **Reset / preservation-oriented recovery**
-   - only after targeted repair and rollback options are exhausted;
-   - explicit user approval required;
-   - clearly explain what is preserved and what is removed.
+- `Checking Windows image health`
+- `Verifying protected Windows system files`
+- `Checking filesystem consistency`
+- `Repairing Windows component store`
+- `Repairing protected Windows system files`
+- `Repairing filesystem errors`
 
-9. **Clean reinstall**
-   - LAST RESORT;
-   - backup readiness and explicit destructive local authorization required;
-   - verified target selection required.
+The UI should avoid exposing raw command syntax unless it helps the user's decision. Logs can retain exact commands, switches, return codes and hashes.
 
-The roadmap is adaptive. RescueMeAI may mark steps `NOT NEEDED`, insert a diagnostic sub-stage, or move back to an earlier stage when new evidence justifies it.
+Behavior-specific safety remains visible:
 
-## 5. Roadmap state labels
+```text
+CURRENT TASK
+Checking filesystem consistency
 
-Use explicit text symbols so color is never required:
+Windows change: READ ONLY
+```
+
+versus:
+
+```text
+CURRENT TASK
+Repairing filesystem errors
+
+Windows change: REPAIR WRITE
+Backup status : STRONGLY RECOMMENDED
+```
+
+## 6. Roadmap state labels
+
+Use explicit text labels so color is never required:
 
 - `[PASS]` completed successfully;
 - `[NOW ]` active stage;
@@ -162,9 +239,9 @@ Use explicit text symbols so color is never required:
 - `[SKIP]` not applicable / not needed;
 - `[LOCK]` escalation tier not yet authorized or justified.
 
-`Reset` and `Clean reinstall` should normally remain `[LOCK]` until earlier tiers have been exhausted and the required authorization gates are satisfied.
+`Repair Reinstall`, `Reset Windows`, and `Clean Reinstall` should normally remain `[LOCK]` until earlier justified repair/rollback options have been exhausted and the relevant readiness/authorization gates are satisfied.
 
-## 6. Stable screen layout
+## 7. Stable screen layout
 
 For normal autonomous operation, the primary RescueMeAI screen should use this hierarchy:
 
@@ -173,38 +250,47 @@ For normal autonomous operation, the primary RescueMeAI screen should use this h
                                            RESCUEMEAI
                                   AI-ASSISTED WINDOWS RECOVERY
 ================================================================================================
-Status          : WORKING / WAITING / ACTION REQUIRED / PASS / FAIL / WARNING
+Status          : WORKING
 Internet        : CONNECTED
-Windows changes : NONE / READ ONLY / REPAIR WRITE / DESTRUCTIVE
+Windows changes : READ ONLY
 ================================================================================================
 
-RECOVERY ROADMAP                         Stage 5 of 9
-Plan progress: [############--------] 60% (estimated)
+RECOVERY ROADMAP                         Stage 2 of 10
+Plan progress: [####----------------] 20% (estimated)
 
-[PASS] Hardware safety       [PASS] Evidence/logs
-[PASS] Backup readiness      [PASS] Recovery media
-[NOW ] Targeted repair       [NEXT] Offline repair
-[    ] Restore/rollback      [LOCK] Reset
-[LOCK] Clean reinstall
+[PASS] Hardware Safety
+[NOW ] Evidence + Windows Diagnostics
+[NEXT] Built-in Windows Repair
+[    ] Boot Test / Reassess
+[    ] Targeted Repair
+[    ] Advanced Offline Repair
+[    ] Restore / Rollback
+[LOCK] Repair Reinstall
+[LOCK] Reset Windows
+[LOCK] Clean Reinstall
+
+SAFETY READINESS
+Backup        : NOT REQUIRED YET
+Recovery USB  : NOT NEEDED YET
+Windows change: READ ONLY
 
 CURRENT TASK
-Repairing boot-critical storage configuration
-Progress: Stage 2 of 4
-Elapsed : 00:01:18
-ETA     : Not available - result dependent
+Checking Windows image health
+Progress : 41%
+Elapsed  : 00:01:18
+ETA      : Not available yet - native diagnostic still running
 
 WHAT IS HAPPENING NOW
-RescueMeAI is checking the proposed change and collecting the result.
+RescueMeAI is using Windows' built-in diagnostic tools to check system health.
 
 WHAT YOU NEED TO DO
 PLEASE WAIT - no action is required from you right now.
-To stop safely while Status says WAITING, press S once.
 ================================================================================================
 ```
 
-The screen should be redrawn only at meaningful state changes or reasonable progress intervals. Do not rapidly flash multiple screens for minor internal operations.
+The screen should redraw only at meaningful state changes or reasonable progress intervals. Do not rapidly flash multiple screens for minor internal operations.
 
-## 7. User-action footer rules
+## 8. User-action footer rules
 
 The footer depends on the state.
 
@@ -235,11 +321,29 @@ Leave this PC window open. RescueMeAI will remain online and wait for the next i
 
 Use `FAIL` or `WARNING` as appropriate.
 
+### BACKUP OR MEDIA ACTION REQUIRED
+
+If the next tier cannot safely proceed without user-provided hardware, say exactly what is needed and why.
+
+Example:
+
+```text
+ACTION REQUIRED - BACKUP DRIVE NEEDED
+
+Why:
+The next repair step can materially alter filesystem state.
+
+What you need:
+A separate external HDD or SSD with at least 850 GB free space.
+
+Do not disconnect the current recovery USB.
+```
+
 ### LOCAL AUTHORIZATION REQUIRED
 
 Clearly state the exact action, risk, target, consequence and authorization phrase. Never hide a destructive authorization prompt inside an ordinary progress screen.
 
-## 8. Background/remote activity visibility
+## 9. Background/remote activity visibility
 
 The PC should show meaningful milestones for work being coordinated remotely, without turning display messages into executable commands.
 
@@ -251,15 +355,18 @@ Examples:
 - Command received;
 - Verifying command integrity;
 - Checking safety policy;
-- Starting diagnostic;
+- Starting Windows diagnostic;
+- Running built-in Windows repair;
+- Preparing recovery source;
 - Downloading recovery source;
 - Verifying downloaded files;
+- Reassessing after repair;
 - Reporting result;
 - Waiting for user response.
 
 Remote activity status is **display-only** and must be isolated from the executable command channel. A status message can never authorize or execute a recovery action.
 
-## 9. Long-running operations
+## 10. Long-running operations
 
 For any operation expected to exceed roughly one minute, show periodic progress/heartbeat output so the user can distinguish slow work from a frozen process.
 
@@ -273,23 +380,43 @@ At minimum show:
 
 Do not clear useful progress information merely to redraw an identical screen.
 
-## 10. Progress persistence
+## 11. Progress persistence
 
-Roadmap state and current operation state should be journaled locally so that after a safe RescueMeAI restart the UI can say, for example:
+Roadmap state, readiness state and current-operation state should be journaled locally so that after a safe RescueMeAI restart the UI can say, for example:
 
 ```text
 Recovery session resumed.
-Completed stages: 4 of 9
-Last completed action: Recovery source download and SHA-1 verification
-Current stage: Recovery media validation
+
+Completed stages : 3 of 10
+Last completed   : Built-in Windows repair
+Current stage    : Boot Test / Reassess
+Backup status    : RECOMMENDED
+Recovery USB     : READY
+Last result      : PASS
 ```
 
 A restart must not falsely reset the displayed recovery journey to 0%.
 
-## 11. Safety interpretation
+Persist at minimum:
+
+- current roadmap stage;
+- stage states;
+- last completed action/result;
+- backup readiness;
+- recovery-media readiness;
+- Windows change level;
+- current task/progress when resumable;
+- pending user/remote dependency.
+
+## 12. Safety interpretation
 
 Progress indicators never override safety policy.
 
-A user must not be encouraged to authorize a destructive operation merely because the roadmap is `90% complete` or because the application says only one stage remains.
+A user must not be encouraged to authorize a destructive operation merely because:
 
-Safety gates, backup requirements, rollback assessment and local destructive authorization remain authoritative regardless of progress presentation.
+- the roadmap is `90% complete`;
+- only one stage remains;
+- the current task has reached a high percentage;
+- an ETA is short.
+
+Safety gates, backup requirements, rollback assessment, target validation and local destructive authorization remain authoritative regardless of progress presentation.
