@@ -2,13 +2,13 @@
 setlocal EnableExtensions EnableDelayedExpansion
 rem WR_RISK=REPAIR_WRITE
 rem WR_LOCAL_AUTH=NOT_REQUIRED
-rem WR_SUMMARY=Load the immutable RescueMeAI Pairing-12 core and continue repository-scoped GitHub App device pairing.
+rem WR_SUMMARY=Load the immutable RescueMeAI Pairing-13 core and continue repository-scoped GitHub App device pairing.
 rem WR_ACTION=LOAD_RESCUEMEAI_PAIRING_CORE
 rem WR_TARGET=RescueMeAI recovery tooling only. No Windows repair target.
 rem WR_CONSEQUENCE=Downloads one pinned RescueMeAI pairing module and executes it.
 rem WR_ROLLBACK=Downloaded recovery tooling can be removed later. No Windows recovery state is modified.
 
-set "COMMAND_VERSION=RMAI-2026.08.14-SECURE-PAIRING-12"
+set "COMMAND_VERSION=RMAI-2026.08.14-SECURE-PAIRING-13"
 set "PRODUCT=RescueMeAI"
 set "DESCRIPTION=AI-ASSISTED WINDOWS RECOVERY"
 set "WORK=C:\WinRERepair"
@@ -20,16 +20,16 @@ if not exist "%MODE%" set "MODE=mode"
 set "APIHOST=api.github.com"
 set "DOHHOST=cloudflare-dns.com"
 set "SOURCE_REPO=RennieBeekharry/winre-repair"
-set "SOURCE_REF=2d6a18b6fcda9b124ff6bcd223234d42a0be0063"
-set "CORE=%RUNTIME%\pairing-core-v12.cmd"
-set "CORE_TMP=%RUNTIME%\pairing-core-v12.cmd.tmp"
-set "CORE_URL=https://api.github.com/repos/%SOURCE_REPO%/contents/lib/pairing-core-v12.cmd?ref=%SOURCE_REF%"
+set "SOURCE_REF=7ad401e5e7425d90358f57660540bcca08a49919"
+set "CORE=%RUNTIME%\pairing-core-v13.cmd"
+set "CORE_TMP=%RUNTIME%\pairing-core-v13.cmd.tmp"
+set "CORE_URL=https://api.github.com/repos/%SOURCE_REPO%/contents/lib/pairing-core-v13.cmd?ref=%SOURCE_REF%"
 set "APIIP="
 set "DOH_STATUS=NOT_RUN"
 set "DOH_HTTP=NOT_RUN"
 set "DOH_CURL_RC=NOT_RUN"
 set "FAIL_RC=90"
-set "FAIL_REASON=RescueMeAI could not load the secure Pairing-12 core."
+set "FAIL_REASON=RescueMeAI could not load the secure Pairing-13 core."
 set "UI_WIDTH=96"
 set "UI_TEXT_WIDTH=92"
 set "UI_BORDER================================================================================================="
@@ -54,7 +54,7 @@ if not exist "%FINDSTR%" (
 
 call :HEADER INFO "LOADING SECURE PAIRING CORE"
 call :SECTION "PAIRING BOOTSTRAP"
-call :WRAP "RescueMeAI is loading the immutable Pairing-12 authentication core. Terms version 2026-08-14 was already accepted on this recovery computer."
+call :WRAP "RescueMeAI is loading the immutable Pairing-13 authentication core. Terms version 2026-08-14 was already accepted on this recovery computer."
 
 call :DOH_RESOLVE_A "%APIHOST%" APIIP
 set "DOH_STATUS=!DOH_LAST_STATUS!"
@@ -62,7 +62,7 @@ set "DOH_HTTP=!DOH_LAST_HTTP!"
 set "DOH_CURL_RC=!DOH_LAST_CURL_RC!"
 if not defined APIIP (
   set "FAIL_RC=92"
-  set "FAIL_REASON=DNS-over-HTTPS could not provide an api.github.com address for the pinned Pairing-12 core."
+  set "FAIL_REASON=DNS-over-HTTPS could not provide an api.github.com address for the pinned Pairing-13 core."
   goto :FAIL
 )
 
@@ -78,29 +78,29 @@ if exist "%CORE_TMP%" del /f /q "%CORE_TMP%" >nul 2>&1
 set "FETCH_RC=!errorlevel!"
 if not "!FETCH_RC!"=="0" (
   set "FAIL_RC=90"
-  set "FAIL_REASON=The pinned RescueMeAI Pairing-12 core could not be downloaded."
+  set "FAIL_REASON=The pinned RescueMeAI Pairing-13 core could not be downloaded."
   goto :FAIL
 )
 if not exist "%CORE_TMP%" (
   set "FAIL_RC=90"
-  set "FAIL_REASON=curl returned success but the Pairing-12 core file was not created."
+  set "FAIL_REASON=curl returned success but the Pairing-13 core file was not created."
   goto :FAIL
 )
 for %%Z in ("%CORE_TMP%") do if %%~zZ LSS 256 (
   set "FAIL_RC=96"
-  set "FAIL_REASON=The downloaded Pairing-12 core was unexpectedly small."
+  set "FAIL_REASON=The downloaded Pairing-13 core was unexpectedly small."
   goto :FAIL
 )
-"%FINDSTR%" /i /c:"WR-MODULE: pairing-core 2026.08.14-PAIRING-12" "%CORE_TMP%" >nul 2>&1
+"%FINDSTR%" /i /c:"WR-MODULE: pairing-core 2026.08.14-PAIRING-13" "%CORE_TMP%" >nul 2>&1
 if errorlevel 1 (
   set "FAIL_RC=96"
-  set "FAIL_REASON=The downloaded Pairing-12 core failed marker validation."
+  set "FAIL_REASON=The downloaded Pairing-13 core failed marker validation."
   goto :FAIL
 )
 move /y "%CORE_TMP%" "%CORE%" >nul 2>&1
 if errorlevel 1 (
   set "FAIL_RC=97"
-  set "FAIL_REASON=The validated Pairing-12 core could not be staged locally."
+  set "FAIL_REASON=The validated Pairing-13 core could not be staged locally."
   goto :FAIL
 )
 >"%WORK%\github-api-ip.txt" echo(!APIIP!
@@ -111,7 +111,7 @@ exit /b !CORE_RC!
 
 :FAIL
 call :HEADER ERROR "PAIRING BOOTSTRAP FAILED"
-call :SECTION "[FAIL] RESCUEMEAI COULD NOT LOAD PAIRING-12"
+call :SECTION "[FAIL] RESCUEMEAI COULD NOT LOAD PAIRING-13"
 call :LINE "Return code : !FAIL_RC!"
 call :LINE "API DoH     : !DOH_STATUS!"
 call :LINE "DoH HTTP    : !DOH_HTTP!"
