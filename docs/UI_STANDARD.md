@@ -1,8 +1,10 @@
 # RescueMeAIâ„¢ Console UI Standard
 
-**UI standard version:** 2026-08-14.4
+**UI standard version:** 2026-08-14.5
 
-RescueMeAI runs in environments where the user may be under stress, working from WinRE, or reading a low-resolution console. The UI must favor clarity, consistency, and minimal interaction over decorative complexity.
+RescueMeAI runs in environments where the user may be under stress, working from WinRE, or reading a low-resolution console. The UI must favor clarity, consistency, visible progress, and minimal interaction over decorative complexity.
+
+RescueMeAI is **autonomous, but visibly autonomous**. A user must never have to guess whether the application is still running, what it is doing, how far the current task has progressed, whether Windows is being changed, or whether user action is required.
 
 ## 1. Display geometry
 
@@ -36,8 +38,8 @@ Every user-facing RescueMeAI screen should begin with the same compact informati
 2. Centered one-line application description
 3. Version
 4. Internet connection: `CONNECTED`, `NOT CONNECTED`, or `CHECKING`
-5. Current step/mode
-6. Safety level: `READ ONLY`, `REPAIR WRITE`, or `DESTRUCTIVE - LOCAL APPROVAL REQUIRED`
+5. Runtime status: `WORKING`, `WAITING`, `ACTION REQUIRED`, `PASS`, `FAIL`, or `WARNING`
+6. Windows change level: `NONE`, `READ ONLY`, `REPAIR WRITE`, or `DESTRUCTIVE`
 7. Legal repository URL
 8. Legal landing filename
 
@@ -48,18 +50,107 @@ Recommended layout:
                                            RESCUEMEAI
                                   AI-ASSISTED WINDOWS RECOVERY
 ================================================================================================
-Version      : RMAI-...
-Internet     : [CONNECTED]
-Current Step : TERMS AND RECOVERY RISK ACCEPTANCE
-Safety       : REPAIR WRITE - NON-DESTRUCTIVE
-Legal        : https://github.com/RennieBeekharry/winre-repair
-Legal file   : LEGAL.md
+Version         : RMAI-...
+Internet        : [CONNECTED]
+Status          : WORKING
+Windows changes : READ ONLY
+Legal           : https://github.com/RennieBeekharry/winre-repair
+Legal file      : LEGAL.md
 ================================================================================================
 ```
 
-The shorter repository URL deliberately replaces a long direct `blob/main/LEGAL.md` URL. The next line identifies `LEGAL.md`. This keeps the legal reference readable and within the console boundary.
+The shorter repository URL deliberately replaces a long direct `blob/main/LEGAL.md` URL. The next line identifies `LEGAL.md`.
 
-## 4. Central WinRE screen-theme renderer
+## 4. Required recovery-status blocks
+
+Normal recovery screens should expose four distinct blocks where applicable.
+
+### 4.1 Recovery Roadmap
+
+Shows where the user is in the evidence-based least-invasive-to-most-invasive plan.
+
+Canonical stages:
+
+1. Hardware Safety
+2. Evidence + Windows Diagnostics
+3. Built-in Windows Repair
+4. Boot Test / Reassess
+5. Targeted Repair
+6. Advanced Offline Repair
+7. Restore / Rollback
+8. Repair Reinstall
+9. Reset Windows
+10. Clean Reinstall
+
+The roadmap may include an **estimated** plan-completion percentage. It must never be described as a probability of success or a guaranteed time-to-fix.
+
+### 4.2 Safety Readiness
+
+Shows adaptive backup and recovery-media gates alongside the roadmap.
+
+Example:
+
+```text
+SAFETY READINESS
+Backup        : RECOMMENDED
+Recovery USB  : READY
+Windows change: REPAIR WRITE
+```
+
+Backup states:
+
+- `NOT REQUIRED YET`
+- `RECOMMENDED`
+- `STRONGLY RECOMMENDED`
+- `REQUIRED`
+
+Recovery-media states:
+
+- `NOT NEEDED YET`
+- `RECOMMENDED`
+- `PREPARING`
+- `READY`
+- `REQUIRED`
+
+When a readiness state escalates to `STRONGLY RECOMMENDED` or `REQUIRED`, the screen should give a short reason.
+
+### 4.3 Current Task Progress
+
+Shows exact or evidence-based progress for the operation currently running.
+
+When measurable, show:
+
+- percentage;
+- units completed / total;
+- bytes processed/transferred;
+- elapsed time;
+- rate when useful;
+- ETA when supportable;
+- retry count when relevant.
+
+For tools that expose trustworthy native progress such as DISM or SFC, prefer the tool's native progress rather than inventing an independent percentage.
+
+If an ETA is not supportable, say so plainly:
+
+```text
+ETA: Not available yet - result dependent.
+```
+
+Never invent a whole-recovery-session ETA.
+
+### 4.4 User Action
+
+Every screen must explicitly say one of:
+
+- `PLEASE WAIT - no action is required from you right now.`
+- `ACTION REQUIRED - return to ChatGPT and send exactly: PASS/FAIL/WARNING.`
+- `ACTION REQUIRED - connect/provide the specified backup or recovery device.`
+- `LOCAL AUTHORIZATION REQUIRED - review the exact destructive action below.`
+- `STOPPED SAFELY - press any key to return to Command Prompt.`
+
+Do not force the user to infer the next step from technical output.
+
+## 5. Central WinRE screen-theme renderer
 
 Individual screens and recovery modules must **not choose hexadecimal console colors**.
 
@@ -79,29 +170,41 @@ The active recovery environment established that two native per-line approachesâ
 
 RescueMeAI therefore uses a simpler native screen-level theme in WinRE. This is deliberately more conservative than repeatedly trying fragile per-line techniques during an active recovery.
 
-The central renderer applies the selected theme with the Windows `color` command. Individual modules still communicate semantic states such as PASS, WARNING, ERROR, and INFO, but they do not embed color codes.
-
-A future full Windows graphical/terminal UI may provide richer per-component coloring without changing the semantic message model.
-
 Color must never be the only status signal. Text must explicitly identify `[PASS]`, `[FAIL]`, `[WARNING]`, `[CONNECTED]`, and similar states.
 
-## 5. Output wrapping
+## 6. Output wrapping
 
 User-facing paragraphs, warnings, instructions, paths, and diagnostic explanations must be passed through the shared wrapping function when they could exceed the configured text width.
 
 The renderer should wrap at word boundaries where practical. Single values that cannot be broken safely should be displayed on their own line or shortened to a stable landing URL/reference.
 
-No ordinary RescueMeAI output should rely on the console performing uncontrolled automatic wrapping.
+No ordinary RescueMeAI output should rely on uncontrolled console wrapping.
 
-## 6. User prompts
+## 7. User prompts
 
-Prompts must describe the required action instead of generic labels such as `Selection:`.
+Prompts must describe the required action instead of generic labels such as `Selection:` or `Your choice:` when the action is actually a physical key press.
 
 Examples:
 
 - `ACCEPT TERMS OF USE: `
 - `DESTRUCTIVE ACTION AUTHORIZATION: `
 - `SELECT MENU OPTION: `
+
+For a physical Enter-key action, say:
+
+```text
+PRESS THE ENTER KEY ONCE
+Do NOT type the word ENTER.
+```
+
+For a typed stop command, say:
+
+```text
+TYPE: STOP
+THEN press the ENTER key.
+```
+
+Do not visually present a physical key press and a typed command as if they are equivalent menu entries.
 
 For the Terms gate:
 
@@ -113,13 +216,13 @@ Anything else stops RescueMeAI safely and returns to the command prompt.
 ACCEPT TERMS OF USE:
 ```
 
-The actual interactive prompt must appear **once only**. Do not render a separate duplicate prompt label immediately before `set /p` or another input primitive.
+The actual interactive prompt must appear **once only**.
 
 The general Terms `ACCEPT` phrase never authorizes a destructive recovery action.
 
-## 7. Safe decline / cancellation behavior
+## 8. Safe decline / cancellation behavior
 
-If a user does not type the required legal-acceptance phrase, RescueMeAI must treat that as a safe decline or cancellation rather than an application failure.
+If a user does not type the required legal-acceptance phrase, RescueMeAI must treat that as a safe decline/cancellation rather than an application failure.
 
 The screen should clearly state:
 
@@ -132,7 +235,7 @@ The screen should clearly state:
 
 The application should then return directly to the interactive command prompt. It should not hold the screen behind an unnecessary `pause`.
 
-## 8. Result screens
+## 9. Result screens
 
 Every completed recovery step ends in exactly one overall state:
 
@@ -146,12 +249,85 @@ Every result screen includes, where applicable:
 - `WHAT HAPPENED`
 - `WHY IT STOPPED` or `REASON`
 - `WHAT YOU SHOULD DO`
+- `WHAT HAPPENS NEXT`
 - `ADDITIONAL INFORMATION REQUIRED`
 - `ADDITIONAL INSTRUCTIONS`
 
+When the active ChatGPT conversation is the continuation mechanism, a completed result must explicitly tell the user to send exactly `pass`, `fail`, or `warning` and then leave the PC window open.
+
 Once authenticated private reporting is online, screenshots should normally not be requested.
 
-## 9. Internet status
+## 10. Waiting and working screens
+
+### WORKING
+
+```text
+PLEASE WAIT - RescueMeAI is working.
+No action is required from you right now.
+```
+
+For long-running operations, also show progress/heartbeat information.
+
+### WAITING
+
+```text
+RescueMeAI is still running and waiting for the next recovery instruction.
+PLEASE WAIT - no action is required from you right now.
+To stop safely while Status says WAITING, press S once.
+```
+
+Do not use this footer on a completed PASS/FAIL/WARNING result because those states require the user to notify the active conversation unless a future relay can continue automatically.
+
+## 11. Background/remote activity visibility
+
+The PC should show meaningful milestones for work coordinated remotely, for example:
+
+- Reviewing the latest recovery result;
+- Preparing the next recovery step;
+- Waiting for the next recovery instruction;
+- Command received;
+- Verifying command integrity;
+- Checking safety policy;
+- Starting Windows diagnostic;
+- Running built-in Windows repair;
+- Preparing/downloading recovery source;
+- Verifying files;
+- Reassessing after repair;
+- Reporting result;
+- Waiting for user response.
+
+Remote activity status is **display-only** and must remain isolated from the executable command channel. A status message can never authorize or execute a recovery action.
+
+## 12. Long-running operations
+
+For any operation expected to exceed roughly one minute, show periodic progress/heartbeat output so the user can distinguish slow work from a frozen process.
+
+At minimum show:
+
+- current task name;
+- most recent progress value or stage;
+- elapsed time;
+- last activity time;
+- `RescueMeAI is still running` heartbeat when there has been no visible percentage change for a reasonable interval.
+
+Do not rapidly clear/redraw multiple screens for minor internal operations.
+
+## 13. Progress persistence
+
+Roadmap, readiness and current-operation state should be journaled locally so that after a safe RescueMeAI restart the UI can resume the visible journey instead of resetting to 0%.
+
+Example:
+
+```text
+Recovery session resumed.
+Completed stages : 3 of 10
+Last completed   : Built-in Windows Repair
+Current stage    : Boot Test / Reassess
+Backup status    : RECOMMENDED
+Recovery USB     : READY
+```
+
+## 14. Internet status
 
 Internet status reflects the best available evidence, not just ICMP ping.
 
@@ -163,16 +339,24 @@ Priority:
 
 A failed ping alone must not label the Internet disconnected when HTTPS is working.
 
-## 10. Information density
+## 15. Information density
 
-Keep the permanent header compact. Detailed return codes, hashes, repository IDs, driver IDs, and internal implementation diagnostics belong on FAIL/debug screens only when they help the immediate recovery decision.
+Keep the permanent header compact. Detailed return codes, hashes, repository IDs, driver IDs, raw DISM/SFC/CHKDSK syntax, and internal implementation diagnostics belong in logs or dedicated FAIL/debug detail unless they help the immediate user decision.
 
-## 11. Safety visibility
+The normal user-facing task should say what the tool is doing, for example `Checking Windows image health`, rather than forcing a novice user to interpret raw command-line syntax.
 
-Every screen that can lead to a write action must show the current safety class. Destructive operations must be visually and textually distinct and require separate local authorization.
+## 16. Safety visibility
 
-## 12. Compatibility
+Every screen that can lead to a write action must show the current Windows change level.
 
-The WinRE UI remains pure Windows batch where practical. It does not depend on PowerShell, JScript, ANSI/VT escape processing, or external UI frameworks for its baseline presentation.
+Tool risk is classified by exact operation, not merely executable name. For example, a read-only CHKDSK status check and a CHKDSK `/F` repair must not share the same risk label.
+
+Destructive operations must be visually and textually distinct and require separate local authorization.
+
+## 17. Compatibility
+
+The WinRE UI remains pure Windows batch where practical. It does not depend on PowerShell, ANSI/VT escape processing, or external UI frameworks for its baseline presentation.
+
+Optional helpers may be used when pinned/validated and when failure leaves the baseline UI functional.
 
 If enhanced presentation is unavailable, text remains readable and explicit status labels remain authoritative.
