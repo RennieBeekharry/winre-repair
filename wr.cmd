@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-set "LAUNCHER_VERSION=RMAI-LAUNCHER-2026.08.14-1315-ET"
+set "LAUNCHER_VERSION=RMAI-LAUNCHER-2026.08.14-1328-ET"
 set "PRODUCT=RescueMeAI"
 set "DESCRIPTION=AI-ASSISTED WINDOWS RECOVERY"
 set "LEGAL_BASE=https://github.com/RennieBeekharry/winre-repair"
@@ -13,6 +13,9 @@ set "NSLOOKUP=C:\Windows\System32\nslookup.exe"
 set "FINDSTR=C:\Windows\System32\findstr.exe"
 set "MODE=C:\Windows\System32\mode.com"
 if not exist "%MODE%" set "MODE=mode"
+set "UI_CMD=%ComSpec%"
+if not defined UI_CMD set "UI_CMD=X:\Windows\System32\cmd.exe"
+if not exist "%UI_CMD%" set "UI_CMD=C:\Windows\System32\cmd.exe"
 set "DNS=64.71.255.204"
 set "APIHOST=api.github.com"
 set "URL=https://api.github.com/repos/RennieBeekharry/winre-repair/contents/next.cmd?ref=main"
@@ -42,6 +45,11 @@ if not exist "%CURL%" (
 if not exist "%FINDSTR%" (
   set "FAIL_RC=91"
   set "FAIL_REASON=Required findstr.exe was not found in the recovery environment."
+  goto :LAUNCHER_FAIL
+)
+if not exist "%UI_CMD%" (
+  set "FAIL_RC=91"
+  set "FAIL_REASON=Required cmd.exe was not found in the recovery environment."
   goto :LAUNCHER_FAIL
 )
 
@@ -210,8 +218,8 @@ if /i "!UI_SEM!"=="MUTED" set "UI_ATTR=08"
 call :STRLEN "!UI_TEXT!" UI_PRINT_LEN
 if !UI_PRINT_LEN! GTR %UI_WIDTH% set "UI_TEXT=!UI_TEXT:~0,%UI_WIDTH%!"
 >"%UI_TMP%" echo(!UI_TEXT!
-"%FINDSTR%" /a:!UI_ATTR! /r "^" "%UI_TMP%" 2>nul
-if errorlevel 1 echo(!UI_TEXT!
+"%UI_CMD%" /d /q /t:!UI_ATTR! /c type "%UI_TMP%" 2>nul
+if errorlevel 1 type "%UI_TMP%"
 del /f /q "%UI_TMP%" >nul 2>&1
 exit /b 0
 
