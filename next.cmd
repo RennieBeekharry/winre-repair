@@ -5,10 +5,10 @@ rem WR_LOCAL_AUTH=NOT_REQUIRED
 rem WR_SUMMARY=Self-contained RescueMeAI Terms acceptance and repository-scoped GitHub App pairing.
 rem WR_ACTION=BOOTSTRAP_RESCUEMEAI_SECURE_PRIVATE_REPORTING
 rem WR_TARGET=Recovery tooling under C:\WinRERepair only; no Windows boot files or disk layout.
-rem WR_CONSEQUENCE=Records Terms acceptance and establishes a repository-scoped outbound GitHub App credential.
+rem WR_CONSEQUENCE=Uses accepted Terms, establishes a repository-scoped outbound GitHub App credential, and uploads recovery evidence.
 rem WR_ROLLBACK=Local RescueMeAI authorization files can be removed later; no Windows recovery changes are performed.
 
-set "COMMAND_VERSION=RMAI-2026.08.14-SECURE-PAIRING-8"
+set "COMMAND_VERSION=RMAI-2026.08.14-SECURE-PAIRING-9"
 set "PRODUCT=RescueMeAI"
 set "DESCRIPTION=AI-ASSISTED WINDOWS RECOVERY"
 set "TERMS_VERSION=2026-08-14"
@@ -33,24 +33,22 @@ set "MODE=C:\Windows\System32\mode.com"
 if not exist "%MODE%" set "MODE=mode"
 set "APIHOST=api.github.com"
 set "WEBHOST=github.com"
+set "DOHHOST=cloudflare-dns.com"
 set "LOGREPO=RennieBeekharry/winre-repair-logs"
 set "GITHUB_APP_ID=4595411"
 set "GITHUB_APP_CLIENT_ID=Iv23lif9UoXW4QvUh8tJ"
 set "GITHUB_REPOSITORY_ID=1333818657"
 
-rem WinRE UI geometry. Screen theme is selected centrally by :UI_THEME.
 set "UI_WIDTH=96"
 set "UI_TEXT_WIDTH=92"
 set "UI_BORDER================================================================================================="
 set "UI_RULE=------------------------------------------------------------------------------------------------"
 set "UI_SPACES=                                                                                                    "
 
-rem Take ownership of the console title so repeated launcher invocations do
-rem not accumulate C:\wr.cmd text in the Windows title bar.
 title RescueMeAI - Windows Recovery
 
-rem The persistent C:\wr.cmd launcher downloaded this exact build over HTTPS.
-rem Current-run Internet access is therefore already proven.
+rem C:\wr.cmd downloaded this exact file over api.github.com HTTPS, so current
+rem Internet access is already proven. Preserve the launcher's API address.
 set "LAUNCHER_APIIP=%APIIP%"
 set "APIIP=%LAUNCHER_APIIP%"
 set "WEBIP="
@@ -68,6 +66,12 @@ set "AUTH_CURL_RC=NOT_RUN"
 set "UPLOAD_STATUS=NOT_REACHED"
 set "UPLOAD_HTTP=NOT_RUN"
 set "UPLOAD_CURL_RC=NOT_RUN"
+set "DOH_WEB_STATUS=NOT_RUN"
+set "DOH_WEB_HTTP=NOT_RUN"
+set "DOH_WEB_CURL_RC=NOT_RUN"
+set "DOH_API_STATUS=NOT_RUN"
+set "DOH_API_HTTP=NOT_RUN"
+set "DOH_API_CURL_RC=NOT_RUN"
 set "REPORTVOL="
 
 if not exist "%WORK%" md "%WORK%" >nul 2>&1
@@ -90,8 +94,6 @@ if errorlevel 1 goto :FAIL
 call :REQUIRE "%PING%" "ping.exe"
 if errorlevel 1 goto :FAIL
 
-rem Direct-IP ping is secondary evidence only. The successful launcher HTTPS
-rem fetch remains authoritative for the CONNECTED header state.
 if exist "%PING%" (
   "%PING%" -n 1 -w 1500 1.1.1.1 >nul 2>&1
   if errorlevel 1 if exist "%WPEUTIL%" "%WPEUTIL%" InitializeNetwork >nul 2>&1
@@ -266,6 +268,8 @@ call :UI_LINE "None"
 call :UI_SECTION "ADDITIONAL INSTRUCTIONS"
 call :UI_WRAP "Do not rerun C:\wr.cmd unless RescueMeAI asks you to."
 call :UI_LINE "%UI_BORDER%"
+color 07 >nul 2>&1
+title Command Prompt
 exit /b 0
 
 :TERMS_NOT_ACCEPTED
@@ -300,26 +304,33 @@ call :WRITE_DETAILS
 call :USB_COPY
 call :UI_HEADER ERROR "SECURE PAIRING FAILED" "NO RECOVERY ACTION"
 call :UI_SECTION "[FAIL] RESCUEMEAI SECURE PAIRING FAILED"
-call :UI_LINE "Stage        : !STAGE!"
-call :UI_LINE "Component    : !COMPONENT!"
-call :UI_LINE "Return code  : !FAIL_RC!"
-call :UI_LINE "Component RC : !COMPONENT_RC!"
-call :UI_LINE "Terms        : !TERMS_STATUS!"
-call :UI_LINE "GitHub auth  : !AUTH_STATUS!"
-call :UI_LINE "Auth HTTP    : !AUTH_HTTP!"
-call :UI_LINE "Auth curl RC : !AUTH_CURL_RC!"
-call :UI_LINE "Report upload: !UPLOAD_STATUS!"
-call :UI_LINE "Upload HTTP  : !UPLOAD_HTTP!"
-call :UI_LINE "Upload curl  : !UPLOAD_CURL_RC!"
+call :UI_LINE "Stage         : !STAGE!"
+call :UI_LINE "Component     : !COMPONENT!"
+call :UI_LINE "Return code   : !FAIL_RC!"
+call :UI_LINE "Component RC  : !COMPONENT_RC!"
+call :UI_LINE "Terms         : !TERMS_STATUS!"
+call :UI_LINE "GitHub auth   : !AUTH_STATUS!"
+call :UI_LINE "Auth HTTP     : !AUTH_HTTP!"
+call :UI_LINE "Auth curl RC  : !AUTH_CURL_RC!"
+call :UI_LINE "Web DoH       : !DOH_WEB_STATUS!"
+call :UI_LINE "Web DoH HTTP  : !DOH_WEB_HTTP!"
+call :UI_LINE "Web DoH curl  : !DOH_WEB_CURL_RC!"
+call :UI_LINE "Report upload : !UPLOAD_STATUS!"
+call :UI_LINE "Upload HTTP   : !UPLOAD_HTTP!"
+call :UI_LINE "Upload curl   : !UPLOAD_CURL_RC!"
 call :UI_SECTION "REASON"
 call :UI_WRAP "!FAIL_REASON!"
 call :UI_SECTION "WHAT YOU SHOULD DO"
 call :UI_WRAP "Reply to ChatGPT with exactly: fail"
 call :UI_SECTION "ADDITIONAL INFORMATION REQUIRED"
 call :UI_WRAP "Screenshot this exact screen only if private reporting is not online."
+call :UI_SECTION "EXIT"
+call :UI_WRAP "After taking the screenshot, press any key to return to the Windows Recovery command prompt."
 call :UI_WRAP "Nothing destructive was attempted."
 call :UI_LINE "%UI_BORDER%"
 pause >nul
+color 07 >nul 2>&1
+title Command Prompt
 exit /b !FAIL_RC!
 
 rem =========================================================================
@@ -330,7 +341,6 @@ rem =========================================================================
 exit /b 0
 
 :UI_THEME
-rem One authoritative semantic screen-theme mapping for WinRE.
 set "UI_THEME=%~1"
 set "UI_COLOR=07"
 if /i "!UI_THEME!"=="INFO" set "UI_COLOR=0B"
@@ -417,7 +427,7 @@ set "%~2=%SL_LEN%"
 exit /b 0
 
 rem =========================================================================
-rem RECOVERY / AUTH HELPERS
+rem NETWORK / AUTH HELPERS
 rem =========================================================================
 :REQUIRE
 if exist "%~1" exit /b 0
@@ -435,16 +445,31 @@ if exist "%DEVICE_JSON%" del /f /q "%DEVICE_JSON%" >nul 2>&1
 if exist "%DEVICE_HTTP_FILE%" del /f /q "%DEVICE_HTTP_FILE%" >nul 2>&1
 if exist "%CURLERR%" del /f /q "%CURLERR%" >nul 2>&1
 set "DEVICE_OK=NO"
+
+rem 1. Reuse only a previously HTTPS-validated github.com address.
 if exist "%WORK%\github-web-ip.txt" (
   set "WEB_CAND="
   set /p "WEB_CAND="<"%WORK%\github-web-ip.txt"
   if defined WEB_CAND call :TRY_DEVICE_IP "!WEB_CAND!"
 )
 if /i "!DEVICE_OK!"=="YES" exit /b 0
+
+rem 2. DNS-over-HTTPS does not depend on WinRE's DNS client. Connect to
+rem Cloudflare by fixed IP while preserving cloudflare-dns.com TLS/SNI.
+call :DOH_RESOLVE "%WEBHOST%" WEB_DOH_IP
+set "DOH_WEB_STATUS=!DOH_LAST_STATUS!"
+set "DOH_WEB_HTTP=!DOH_LAST_HTTP!"
+set "DOH_WEB_CURL_RC=!DOH_LAST_CURL_RC!"
+if defined WEB_DOH_IP call :TRY_DEVICE_IP "!WEB_DOH_IP!"
+if /i "!DEVICE_OK!"=="YES" exit /b 0
+
+rem 3. Preserve conventional DNS attempts for environments where they work.
 for %%D in (64.71.255.204 1.1.1.1 8.8.8.8 9.9.9.9) do (
   if /i not "!DEVICE_OK!"=="YES" call :LOOKUP_AND_TRY_DEVICE "%%D"
 )
 if /i "!DEVICE_OK!"=="YES" exit /b 0
+
+rem 4. Final native-resolution attempt for completeness.
 "%CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 15 --max-time 120 -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data "client_id=%GITHUB_APP_CLIENT_ID%" "https://github.com/login/device/code" -o "%DEVICE_JSON%" -w "%%{http_code}" >"%DEVICE_HTTP_FILE%" 2>"%CURLERR%"
 set "AUTH_CURL_RC=!errorlevel!"
 set "AUTH_HTTP="
@@ -457,8 +482,42 @@ if "!AUTH_CURL_RC!"=="0" if "!AUTH_HTTP!"=="200" (
 set "COMPONENT_RC=!AUTH_CURL_RC!"
 set "FAIL_RC=90"
 set "AUTH_STATUS=DEVICE_CODE_FAILED"
-set "FAIL_REASON=Could not reach GitHub's device-authorization endpoint from WinRE."
+set "FAIL_REASON=Could not reach GitHub's device-authorization endpoint. Normal DNS failed and the DNS-over-HTTPS fallback did not produce a working GitHub address."
 exit /b 1
+
+:DOH_RESOLVE
+set "DOH_QUERY_HOST=%~1"
+set "DOH_RETURN_VAR=%~2"
+set "%DOH_RETURN_VAR%="
+set "DOH_LAST_STATUS=FAIL"
+set "DOH_LAST_HTTP=NOT_RUN"
+set "DOH_LAST_CURL_RC=NOT_RUN"
+set "DOH_JSON=%WORK%\doh-response.json"
+set "DOH_HTTP_FILE=%WORK%\doh-http.txt"
+set "DOH_ERR=%WORK%\doh-curl-error.txt"
+for %%I in (1.1.1.1 1.0.0.1) do (
+  if /i not "!DOH_LAST_STATUS!"=="PASS" call :TRY_DOH_IP "%%I"
+)
+if /i "!DOH_LAST_STATUS!"=="PASS" exit /b 0
+exit /b 1
+
+:TRY_DOH_IP
+set "DOH_RESOLVER_IP=%~1"
+if exist "%DOH_JSON%" del /f /q "%DOH_JSON%" >nul 2>&1
+if exist "%DOH_HTTP_FILE%" del /f /q "%DOH_HTTP_FILE%" >nul 2>&1
+if exist "%DOH_ERR%" del /f /q "%DOH_ERR%" >nul 2>&1
+"%CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 10 --max-time 45 --resolve "%DOHHOST%:443:%DOH_RESOLVER_IP%" -H "Accept: application/dns-json" "https://cloudflare-dns.com/dns-query?name=%DOH_QUERY_HOST%&type=A" -o "%DOH_JSON%" -w "%%{http_code}" >"%DOH_HTTP_FILE%" 2>"%DOH_ERR%"
+set "DOH_LAST_CURL_RC=!errorlevel!"
+set "DOH_LAST_HTTP="
+if exist "%DOH_HTTP_FILE%" set /p "DOH_LAST_HTTP="<"%DOH_HTTP_FILE%"
+if not "!DOH_LAST_CURL_RC!"=="0" exit /b 1
+if not "!DOH_LAST_HTTP!"=="200" exit /b 1
+set "DOH_RESULT_IP="
+call :JSON_VALUE "%DOH_JSON%" "data" DOH_RESULT_IP >nul 2>&1
+if not defined DOH_RESULT_IP exit /b 1
+set "%DOH_RETURN_VAR%=!DOH_RESULT_IP!"
+set "DOH_LAST_STATUS=PASS"
+exit /b 0
 
 :LOOKUP_AND_TRY_DEVICE
 set "LOOKUP_DNS=%~1"
@@ -617,6 +676,15 @@ if /i "!UPLOAD_OK!"=="YES" (
   set "LOGTOKEN="
   exit /b 0
 )
+call :DOH_RESOLVE "%APIHOST%" API_DOH_IP
+set "DOH_API_STATUS=!DOH_LAST_STATUS!"
+set "DOH_API_HTTP=!DOH_LAST_HTTP!"
+set "DOH_API_CURL_RC=!DOH_LAST_CURL_RC!"
+if defined API_DOH_IP call :TRY_API_UPLOAD "!API_DOH_IP!"
+if /i "!UPLOAD_OK!"=="YES" (
+  set "LOGTOKEN="
+  exit /b 0
+)
 for %%D in (64.71.255.204 1.1.1.1 8.8.8.8 9.9.9.9) do (
   if /i not "!UPLOAD_OK!"=="YES" call :LOOKUP_AND_TRY_API "%%D"
 )
@@ -719,6 +787,12 @@ exit /b 0
 >>"%DETAILS%" echo github_auth_status=!AUTH_STATUS!
 >>"%DETAILS%" echo auth_http=!AUTH_HTTP!
 >>"%DETAILS%" echo auth_curl_rc=!AUTH_CURL_RC!
+>>"%DETAILS%" echo web_doh_status=!DOH_WEB_STATUS!
+>>"%DETAILS%" echo web_doh_http=!DOH_WEB_HTTP!
+>>"%DETAILS%" echo web_doh_curl_rc=!DOH_WEB_CURL_RC!
+>>"%DETAILS%" echo api_doh_status=!DOH_API_STATUS!
+>>"%DETAILS%" echo api_doh_http=!DOH_API_HTTP!
+>>"%DETAILS%" echo api_doh_curl_rc=!DOH_API_CURL_RC!
 >>"%DETAILS%" echo private_report_upload=!UPLOAD_STATUS!
 >>"%DETAILS%" echo upload_http=!UPLOAD_HTTP!
 >>"%DETAILS%" echo upload_curl_rc=!UPLOAD_CURL_RC!
