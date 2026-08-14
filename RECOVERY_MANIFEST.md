@@ -1,6 +1,6 @@
 # Windows Recovery Manifest
 
-Last updated: 2026-08-14 09:18 ET
+Last updated: 2026-08-14 09:29 ET
 
 ## Current failure
 
@@ -42,9 +42,39 @@ Last updated: 2026-08-14 09:18 ET
 - `REPAIRDATA`: NTFS, remaining USB capacity, reserved for Windows source files, tools, and recovery evidence.
 - Active workflow policy: **no disk clean, format, repartition, filesystem creation, or disk-number write operations**.
 
+## Universal result/reporting protocol
+
+Every recovery run must end in exactly one overall state:
+
+- `[PASS]` — green — run completed successfully; manual reply word: `pass`.
+- `[FAIL]` — red — a required step failed or the run stopped unsafely; manual reply word: `fail`.
+- `[WARNING]` — amber/yellow in the WinRE console — run partially completed, paused safely, or found a condition requiring review; manual reply word: `warning`.
+
+WinRE's standard console palette does not provide a reliable true orange, so amber/yellow is the approved warning color fallback.
+
+The persistent launcher writes a compact machine-readable `LAST_RUN_REPORT.txt` after every run with at least:
+
+- `status=PASS|FAIL|WARNING`
+- return code
+- launcher version
+- recovery command version
+- date/time
+- concise status message
+
+The report is stored at `C:\WinRERepair\LAST_RUN_REPORT.txt` and copied to `REPAIRDATA\RecoverySource\LAST_RUN_REPORT.txt` when that USB volume is available.
+
+A transition command (`WR-2026.08.14-0928-ET`) upgrades the persistent local `C:\wr.cmd` launcher to the universal result protocol while executing the immutable 0918 embedded UUP-download recovery logic.
+
+## Private GitHub report channel
+
+- ChatGPT can read the private repository `RennieBeekharry/winre-repair-logs` through the connected GitHub integration.
+- The remaining unsolved piece is secure authentication from WinRE to that private repository.
+- Until that one-time machine authentication is solved, the compact report is retained locally and on `REPAIRDATA`.
+- Do not embed a long-lived GitHub personal access token in source code or upload it to any repository.
+
 ## Next planned actions
 
-1. Reconstruct the UUP downloader locally from data embedded directly inside `next.cmd`; no separate helper-file network request.
+1. Run transition build `WR-2026.08.14-0928-ET` to execute the immutable embedded-helper UUP download logic and permanently install the PASS/FAIL/WARNING launcher.
 2. Use the official UUP dump JSON API at `api.uupdump.net/get.php` for Windows 11 24H2 build 26100.8894, x64, Home/Core, en-US.
 3. Validate API response build = 26100.8894, architecture = amd64, and presence of a file list before downloading any source file.
 4. Download UUP files only to `REPAIRDATA` and verify each file against the API-provided SHA-1.
@@ -68,4 +98,4 @@ Last updated: 2026-08-14 09:18 ET
 
 ## Recovery workflow principle
 
-Use least-destructive, evidence-driven actions first. Every write to the offline Windows installation should have a defined target, validation gate, and rollback/evidence path. The user-facing script should finish with a compact recovery snapshot so one photo is sufficient for the next decision.
+Use least-destructive, evidence-driven actions first. Every write to the offline Windows installation should have a defined target, validation gate, and rollback/evidence path. The user-facing result should be reducible to PASS, FAIL, or WARNING, while the detailed evidence is preserved in machine-readable reports and the recovery manifest.
