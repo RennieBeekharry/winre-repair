@@ -13,7 +13,7 @@ set "APIHOST=api.github.com"
 set "LAUNCHER_URL=https://api.github.com/repos/RennieBeekharry/winre-repair/contents/wr.cmd?ref=main&cb=%RANDOM%%RANDOM%"
 set "NEWLAUNCHER=%WORK%\wr-device-login.cmd"
 set "UPDATER=%WORK%\finish-device-launcher-update.cmd"
-set "EXPECTED=WR-LAUNCHER-2026.08.14-0155-ET"
+set "EXPECTED=WR-LAUNCHER-2026.08.14-0201-ET"
 
 cls
 echo ================================================================
