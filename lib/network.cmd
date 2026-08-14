@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-rem WR-MODULE: network 2026.08.14-1129-ET
+rem WR-MODULE: network 2026.08.14-1550-ET
 if /i "%~1"=="ensure" goto :ENSURE
 if /i "%~1"=="fetch" goto :FETCH
 exit /b 64
@@ -22,8 +22,10 @@ set "WR_NET_OUT=%~3"
 set "WR_NET_CURL=C:\Windows\System32\curl.exe"
 set "WR_NET_FINDSTR=C:\Windows\System32\findstr.exe"
 set "WR_NET_RESOLVER=C:\WinRERepair\runtime\resolve.cmd"
+set "WR_NET_TOKENFILE=C:\WinRERepair\.auth\github-logs.token"
 set "WR_NET_HOST="
 set "WR_NET_IP="
+set "WR_NET_TOKEN="
 if not exist "%WR_NET_CURL%" exit /b 91
 if not exist "%WR_NET_RESOLVER%" exit /b 91
 if exist "%WR_NET_OUT%" del /f /q "%WR_NET_OUT%" >nul 2>&1
@@ -38,8 +40,14 @@ if defined WR_NET_HOST (
   if errorlevel 1 exit /b 92
 )
 
+if /i "%WR_NET_HOST%"=="api.github.com" if exist "%WR_NET_TOKENFILE%" set /p "WR_NET_TOKEN="<"%WR_NET_TOKENFILE%"
+
 if defined WR_NET_IP (
-  "%WR_NET_CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --resolve "%WR_NET_HOST%:443:%WR_NET_IP%" -H "Accept: application/vnd.github.raw+json" -H "Cache-Control: no-cache, no-store, max-age=0" "%WR_NET_URL%" -o "%WR_NET_OUT%"
+  if defined WR_NET_TOKEN (
+    "%WR_NET_CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --resolve "%WR_NET_HOST%:443:%WR_NET_IP%" -H "Accept: application/vnd.github.raw+json" -H "Authorization: Bearer !WR_NET_TOKEN!" -H "X-GitHub-Api-Version: 2022-11-28" -H "Cache-Control: no-cache, no-store, max-age=0" "%WR_NET_URL%" -o "%WR_NET_OUT%"
+  ) else (
+    "%WR_NET_CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --resolve "%WR_NET_HOST%:443:%WR_NET_IP%" -H "Accept: application/vnd.github.raw+json" -H "Cache-Control: no-cache, no-store, max-age=0" "%WR_NET_URL%" -o "%WR_NET_OUT%"
+  )
 ) else (
   "%WR_NET_CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 15 --max-time 180 -H "Cache-Control: no-cache, no-store, max-age=0" "%WR_NET_URL%" -o "%WR_NET_OUT%"
 )
