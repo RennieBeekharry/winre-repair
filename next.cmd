@@ -1,114 +1,174 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-set "COMMAND_VERSION=WR-2026.08.14-0230-ET"
-set "BUILD_TIME=2026-08-14 02:30 ET"
+set "COMMAND_VERSION=WR-2026.08.14-0240-ET"
+set "BUILD_TIME=2026-08-14 02:40 ET"
 set "OS=C:"
 set "WORK=C:\WinRERepair"
 set "REG=X:\Windows\System32\reg.exe"
 set "DISM=X:\Windows\System32\dism.exe"
 set "FINDSTR=C:\Windows\System32\findstr.exe"
-set "INFO=%WORK%\candidate-driver-info.txt"
-set "INV=%WORK%\driver-inventory-compact.txt"
+set "WPEUTIL=X:\Windows\System32\wpeutil.exe"
 set "INF=%WORK%\intel167\iaAHCIC.inf"
+set "INFO=%WORK%\binding-candidate-info.txt"
+set "INV=%WORK%\binding-driver-inventory.txt"
+set "LOG=%WORK%\storage-binding-test.log"
+set "HIVEBACKUP=%WORK%\SYSTEM.before-iaStorAC-binding.hiv"
+set "DEVBACKUP=%WORK%\DEV_A102.before-iaStorAC-binding.reg"
+set "ACBACKUP=%WORK%\iaStorAC.before-binding.reg"
+set "ABACKUP=%WORK%\iaStorA.before-binding.reg"
+set "MARKER=%WORK%\iaStorAC-binding-applied.txt"
 set "DEVICEKEY=HKLM\WR_SYS\ControlSet001\Enum\PCI\VEN_8086&DEV_A102&SUBSYS_2B45103C&REV_31\3&11583659&0&B8"
-set "READY=YES"
 
 cls
 echo ================================================================
-echo WINRE-REPAIR - STORAGE BINDING PROBE
+echo WINRE-REPAIR - REVERSIBLE STORAGE BINDING TEST
 echo Version: %COMMAND_VERSION%
 echo Built:   %BUILD_TIME%
 echo Fetched: %date% %time%
-echo Mode:    READ-ONLY - NO WINDOWS CHANGES
 echo ================================================================
+echo.
+echo Target: Intel DEV_A102 SATA AHCI controller only
+echo Change: iaStorA -^> iaStorAC service binding
+echo Backup: full offline SYSTEM hive + exact registry keys
+echo Reboot: automatic after successful verification
+echo.
 
 if not exist "%WORK%" md "%WORK%" >nul 2>&1
+>"%LOG%" echo [%date% %time%] START %COMMAND_VERSION%
+
 if not exist "%OS%\Windows\System32\Config\SYSTEM" goto :FAIL_OS
+if not exist "%OS%\Windows\System32\drivers\iaStorAC.sys" goto :FAIL_SYS
+if not exist "%INF%" goto :FAIL_INF
+
+rem Re-validate the exact signed candidate before touching the binding.
+%DISM% /Image:%OS%\ /Get-DriverInfo /Driver:"%INF%" /English /Format:List >"%INFO%" 2>&1
+if errorlevel 1 goto :FAIL_META
+%FINDSTR% /l /i /c:"PCI\VEN_8086&DEV_A102&CC_0106" "%INFO%" >nul 2>&1
+if errorlevel 1 goto :FAIL_META
+%FINDSTR% /l /i /c:"16.7.1.1012" "%INFO%" >nul 2>&1
+if errorlevel 1 goto :FAIL_META
+%FINDSTR% /l /i /c:"iaStorAC" "%INFO%" >nul 2>&1
+if errorlevel 1 goto :FAIL_META
+%FINDSTR% /l /i /c:"amd64" "%INFO%" >nul 2>&1
+if errorlevel 1 goto :FAIL_META
+
+%DISM% /Image:%OS%\ /Get-Drivers /All /English /Format:Table >"%INV%" 2>&1
+%FINDSTR% /l /i /c:"16.7.1.1012" "%INV%" >nul 2>&1
+if errorlevel 1 goto :FAIL_INSTALLED
 
 %REG% unload HKLM\WR_SYS >nul 2>&1
-%REG% load HKLM\WR_SYS "%OS%\Windows\System32\Config\SYSTEM" >nul 2>&1
+%REG% load HKLM\WR_SYS "%OS%\Windows\System32\Config\SYSTEM" >>"%LOG%" 2>&1
 if errorlevel 1 goto :FAIL_HIVE
 
 set "CURSERVICE=UNKNOWN"
-set "CURDRIVER=UNKNOWN"
-for /f "tokens=2,*" %%A in ('%REG% query "%DEVICEKEY%" /v Service 2^>nul ^| %FINDSTR% /i "Service"') do set "CURSERVICE=%%B"
-for /f "tokens=2,*" %%A in ('%REG% query "%DEVICEKEY%" /v Driver 2^>nul ^| %FINDSTR% /i "Driver"') do set "CURDRIVER=%%B"
-
 set "ACSTART=UNKNOWN"
-set "ACIMAGE=UNKNOWN"
+for /f "tokens=2,*" %%A in ('%REG% query "%DEVICEKEY%" /v Service 2^>nul ^| %FINDSTR% /i "Service"') do set "CURSERVICE=%%B"
 for /f "tokens=2,*" %%A in ('%REG% query HKLM\WR_SYS\ControlSet001\Services\iaStorAC /v Start 2^>nul ^| %FINDSTR% /i "Start"') do set "ACSTART=%%B"
-for /f "tokens=2,*" %%A in ('%REG% query HKLM\WR_SYS\ControlSet001\Services\iaStorAC /v ImagePath 2^>nul ^| %FINDSTR% /i "ImagePath"') do set "ACIMAGE=%%B"
-%REG% unload HKLM\WR_SYS >nul 2>&1
 
-set "SYSFILE=NO"
-if exist "%OS%\Windows\System32\drivers\iaStorAC.sys" set "SYSFILE=YES"
+echo [%date% %time%] Current Service=!CURSERVICE!>>"%LOG%"
+echo [%date% %time%] iaStorAC Start=!ACSTART!>>"%LOG%"
 
-set "STALEPKG=MISSING"
-if exist "%OS%\Windows\System32\DriverStore\FileRepository\iastorac.inf_amd64_11836ca5fd4acebc" set "STALEPKG=PRESENT"
+if /i "!CURSERVICE!"=="iaStorAC" goto :ALREADY_APPLIED
+if /i not "!CURSERVICE!"=="iaStorA" goto :FAIL_UNEXPECTED_SERVICE
+if /i not "!ACSTART!"=="0x0" goto :FAIL_START
 
-set "META_HW=NO"
-set "META_VER=NO"
-set "META_AC=NO"
-set "META_AMD64=NO"
-if not exist "%INF%" (
-  set "READY=NO"
-  goto :INVENTORY
-)
+%REG% query HKLM\WR_SYS\ControlSet001\Services\iaStorAC /v ImagePath 2>nul | %FINDSTR% /i /c:"iaStorAC.sys" >nul 2>&1
+if errorlevel 1 goto :FAIL_IMAGEPATH
 
-%DISM% /Image:%OS%\ /Get-DriverInfo /Driver:"%INF%" /English /Format:List >"%INFO%" 2>&1
-if errorlevel 1 (
-  set "READY=NO"
-  goto :INVENTORY
-)
-%FINDSTR% /l /i /c:"PCI\VEN_8086&DEV_A102&CC_0106" "%INFO%" >nul 2>&1
-if not errorlevel 1 set "META_HW=YES"
-%FINDSTR% /l /i /c:"16.7.1.1012" "%INFO%" >nul 2>&1
-if not errorlevel 1 set "META_VER=YES"
-%FINDSTR% /l /i /c:"iaStorAC" "%INFO%" >nul 2>&1
-if not errorlevel 1 set "META_AC=YES"
-%FINDSTR% /l /i /c:"amd64" "%INFO%" >nul 2>&1
-if not errorlevel 1 set "META_AMD64=YES"
+rem Create rollback evidence before the single registry change.
+%REG% save HKLM\WR_SYS "%HIVEBACKUP%" /y >>"%LOG%" 2>&1
+if errorlevel 1 goto :FAIL_BACKUP
+%REG% export "%DEVICEKEY%" "%DEVBACKUP%" /y >>"%LOG%" 2>&1
+if errorlevel 1 goto :FAIL_BACKUP
+%REG% export HKLM\WR_SYS\ControlSet001\Services\iaStorAC "%ACBACKUP%" /y >>"%LOG%" 2>&1
+if errorlevel 1 goto :FAIL_BACKUP
+%REG% export HKLM\WR_SYS\ControlSet001\Services\iaStorA "%ABACKUP%" /y >>"%LOG%" 2>&1
+if errorlevel 1 goto :FAIL_BACKUP
 
-:INVENTORY
-%DISM% /Image:%OS%\ /Get-Drivers /All /English /Format:Table >"%INV%" 2>&1
-set "INSTALLED167=NO"
-%FINDSTR% /l /i /c:"16.7.1.1012" "%INV%" >nul 2>&1
-if not errorlevel 1 set "INSTALLED167=YES"
+rem Single reversible change: bind this exact PCI controller node to iaStorAC.
+%REG% add "%DEVICEKEY%" /v Service /t REG_SZ /d iaStorAC /f >>"%LOG%" 2>&1
+if errorlevel 1 goto :FAIL_WRITE
 
-if /i not "%META_HW%"=="YES" set "READY=NO"
-if /i not "%META_VER%"=="YES" set "READY=NO"
-if /i not "%META_AC%"=="YES" set "READY=NO"
-if /i not "%META_AMD64%"=="YES" set "READY=NO"
-if /i not "%INSTALLED167%"=="YES" set "READY=NO"
-if /i not "%SYSFILE%"=="YES" set "READY=NO"
+set "NEWSERVICE=UNKNOWN"
+for /f "tokens=2,*" %%A in ('%REG% query "%DEVICEKEY%" /v Service 2^>nul ^| %FINDSTR% /i "Service"') do set "NEWSERVICE=%%B"
+if /i not "!NEWSERVICE!"=="iaStorAC" goto :FAIL_VERIFY
 
-cls
+>"%MARKER%" echo Version=%COMMAND_VERSION%
+>>"%MARKER%" echo Applied=%date% %time%
+>>"%MARKER%" echo Controller=PCI\VEN_8086^&DEV_A102
+>>"%MARKER%" echo PreviousService=iaStorA
+>>"%MARKER%" echo NewService=iaStorAC
+>>"%MARKER%" echo RollbackHive=%HIVEBACKUP%
+>>"%MARKER%" echo RollbackDeviceKey=%DEVBACKUP%
+
+%REG% unload HKLM\WR_SYS >>"%LOG%" 2>&1
+
+echo.
 echo ================================================================
-echo STORAGE BINDING PROBE COMPLETE
+echo STORAGE BINDING TEST APPLIED AND VERIFIED
 echo Version: %COMMAND_VERSION%
+echo Previous binding: iaStorA
+echo Test binding:     iaStorAC
+echo Full SYSTEM backup: %HIVEBACKUP%
 echo ================================================================
-echo Current controller service : %CURSERVICE%
-echo Current controller driver  : %CURDRIVER%
-echo iaStorAC Start              : %ACSTART%
-echo iaStorAC.sys present        : %SYSFILE%
-echo Intel 16.7.1.1012 installed : %INSTALLED167%
-echo 16.7 metadata DEV_A102      : %META_HW%
-echo 16.7 metadata iaStorAC      : %META_AC%
-echo Old iaStorAC package folder : %STALEPKG%
-echo ---------------------------------------------------------------
-if /i "%READY%"=="YES" (
-  echo DECISION: READY_FOR_REVERSIBLE_BINDING_TEST
-) else (
-  echo DECISION: NOT_READY_FOR_BINDING_TEST
-)
-echo ================================================================
-echo No Windows changes were made.
+echo Rebooting in 10 seconds to test Windows startup...
+ping -n 11 127.0.0.1 >nul
+%WPEUTIL% reboot
 exit /b 0
 
+:ALREADY_APPLIED
+%REG% unload HKLM\WR_SYS >nul 2>&1
+echo.
+echo BINDING TEST IS ALREADY APPLIED.
+echo Current controller service is already iaStorAC.
+echo No additional change and no automatic reboot were performed.
+exit /b 60
+
 :FAIL_OS
-echo PROBE FAILED: offline Windows SYSTEM hive was not found on C:.
-exit /b 10
+set "MSG=Offline Windows SYSTEM hive was not found on C:."
+goto :FAIL
+:FAIL_SYS
+set "MSG=iaStorAC.sys is missing. Binding was not changed."
+goto :FAIL
+:FAIL_INF
+set "MSG=Validated Intel 16.7 candidate INF is missing. Binding was not changed."
+goto :FAIL
+:FAIL_META
+set "MSG=Intel 16.7 metadata validation failed. Binding was not changed."
+goto :FAIL
+:FAIL_INSTALLED
+set "MSG=Intel 16.7.1.1012 is not present in the offline driver inventory."
+goto :FAIL
 :FAIL_HIVE
-echo PROBE FAILED: could not load offline SYSTEM hive.
-exit /b 11
+set "MSG=Could not load the offline SYSTEM hive."
+goto :FAIL
+:FAIL_UNEXPECTED_SERVICE
+set "MSG=Controller is not currently bound to iaStorA. Unexpected state; stopped."
+goto :FAIL_LOADED
+:FAIL_START
+set "MSG=iaStorAC is not configured as Start=0. Binding was not changed."
+goto :FAIL_LOADED
+:FAIL_IMAGEPATH
+set "MSG=iaStorAC ImagePath does not point to iaStorAC.sys. Binding was not changed."
+goto :FAIL_LOADED
+:FAIL_BACKUP
+set "MSG=Rollback backup creation failed. Binding was not changed."
+goto :FAIL_LOADED
+:FAIL_WRITE
+set "MSG=Registry binding write failed."
+goto :FAIL_LOADED
+:FAIL_VERIFY
+set "MSG=Registry binding verification failed."
+goto :FAIL_LOADED
+
+:FAIL_LOADED
+%REG% unload HKLM\WR_SYS >nul 2>&1
+:FAIL
+echo.
+echo ================================================================
+echo BINDING TEST STOPPED SAFELY
+echo %MSG%
+echo No reboot was initiated.
+echo ================================================================
+exit /b 90
