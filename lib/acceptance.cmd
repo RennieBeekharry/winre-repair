@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-rem WR-MODULE: acceptance 2026.08.14-1325-ET
+rem WR-MODULE: acceptance 2026.08.14-1352-ET
 
 if /i "%~1"=="check" goto :CHECK
 if /i "%~1"=="show" goto :SHOW
@@ -16,6 +16,7 @@ set "TERMS_VERSION=2026-08-14"
 set "VERSION=RMAI-TERMS-%TERMS_VERSION%"
 set "ACCEPTED="
 set "ACCEPTED_VERSION="
+title RescueMeAI - Terms of Use
 
 if not exist "%LEGAL%" md "%LEGAL%" >nul 2>&1
 if exist "%RECORD%" (
@@ -28,7 +29,7 @@ if /i "%ACCEPTED%"=="YES" if /i "%ACCEPTED_VERSION%"=="%TERMS_VERSION%" exit /b 
 
 :TERMS_SCREEN
 if exist "%UI%" (
-  call "%UI%" screen "%VERSION%" "CONNECTED" "TERMS AND RECOVERY RISK ACCEPTANCE" "REPAIR WRITE - NON-DESTRUCTIVE" "AI-ASSISTED WINDOWS RECOVERY"
+  call "%UI%" screen "%VERSION%" "CONNECTED" "TERMS AND RECOVERY RISK ACCEPTANCE" "REPAIR WRITE - NON-DESTRUCTIVE" "AI-ASSISTED WINDOWS RECOVERY" "WARNING"
   call "%UI%" section WARNING "TERMS AND RECOVERY RISK ACCEPTANCE"
   call "%UI%" line LABEL "Terms version: %TERMS_VERSION%"
   echo.
@@ -49,28 +50,51 @@ if exist "%UI%" (
   call "%UI%" line LABEL "%LEGAL%\DISCLAIMER_AND_RISK_NOTICE.md"
   call "%UI%" line LABEL "%LEGAL%\LICENSE.md"
   call "%UI%" section INSTRUCTION "ACTION REQUIRED"
-  call "%UI%" wrap INSTRUCTION "Type VIEW to display the local Terms of Use. Type exactly ACCEPT to agree and continue. Anything else stops RescueMeAI safely."
+  call "%UI%" wrap INSTRUCTION "Type VIEW to display the local Terms of Use. Type exactly ACCEPT to agree and continue. Anything else stops RescueMeAI safely and returns to the command prompt."
   echo.
 ) else (
+  color 0E >nul 2>&1
   cls
   echo RescueMeAI - Terms and Recovery Risk Acceptance
   echo Terms version: %TERMS_VERSION%
   echo.
   echo Type VIEW to display the local Terms of Use.
   echo Type exactly ACCEPT to agree and continue.
-  echo Anything else stops RescueMeAI safely.
+  echo Anything else stops RescueMeAI safely and returns to the command prompt.
   echo.
 )
 set "TYPED="
 set /p "TYPED=ACCEPT TERMS OF USE: "
 if "%TYPED%"=="ACCEPT" goto :ACCEPT
 if /i "%TYPED%"=="VIEW" goto :SHOW_RETURN
+goto :DECLINED
+
+:DECLINED
 if exist "%UI%" (
-  call "%UI%" result WARNING "Terms were not accepted. RescueMeAI will not start." "None." "Rerun RescueMeAI only if you want to review and accept the Terms." "%VERSION%" "CONNECTED"
+  call "%UI%" screen "%VERSION%" "CONNECTED" "TERMS NOT ACCEPTED" "NO RECOVERY ACTION" "AI-ASSISTED WINDOWS RECOVERY" "WARNING"
+  call "%UI%" section WARNING "[WARNING] RESCUEMEAI STOPPED SAFELY"
+  call "%UI%" wrap WARNING "The required phrase ACCEPT was not entered exactly, so RescueMeAI did not record acceptance of the Terms of Use."
+  call "%UI%" section INFO "WHAT HAPPENED"
+  call "%UI%" line LABEL "Terms acceptance       : NOT RECORDED"
+  call "%UI%" line LABEL "Authorization           : NOT STARTED"
+  call "%UI%" line LABEL "Windows recovery actions: NOT STARTED"
+  call "%UI%" line LABEL "Destructive actions     : NONE"
+  call "%UI%" line LABEL "Windows recovery state  : NOT CHANGED"
+  call "%UI%" section INSTRUCTION "WHAT HAPPENS NEXT"
+  call "%UI%" wrap INSTRUCTION "RescueMeAI is returning control to the command prompt. Run C:\wr.cmd later if you want to review and accept the Terms."
+  call "%UI%" section INFO "ADDITIONAL INFORMATION REQUIRED"
+  call "%UI%" line INFO "None"
 ) else (
+  color 0E >nul 2>&1
   echo.
-  echo [WARNING] Terms were not accepted. RescueMeAI will not start.
+  echo [WARNING] RescueMeAI stopped safely because ACCEPT was not entered.
+  echo Terms acceptance: NOT RECORDED
+  echo Recovery actions: NOT STARTED
+  echo Destructive actions: NONE
+  echo Returning to the command prompt.
 )
+color 07 >nul 2>&1
+title Command Prompt
 exit /b 40
 
 :SHOW_RETURN
