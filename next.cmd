@@ -1,173 +1,155 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-set "COMMAND_VERSION=WR-2026.08.14-0328-ET"
-set "BUILD_TIME=2026-08-14 03:28 ET"
+set "COMMAND_VERSION=WR-2026.08.14-0335-ET"
+set "BUILD_TIME=2026-08-14 03:35 ET"
 set "WORK=C:\WinRERepair"
 set "DISKPART=X:\Windows\System32\diskpart.exe"
 set "FINDSTR=C:\Windows\System32\findstr.exe"
 set "TARGET_LABEL=WINREPAIR"
-set "LISTCMD=%WORK%\disk-list-0328.txt"
-set "LISTOUT=%WORK%\disk-list-out-0328.txt"
-set "SCANCMD=%WORK%\disk-scan-0328.txt"
-set "USBDETAIL=%WORK%\usb-candidate-detail-0328.txt"
-set "OSDETAIL=%WORK%\windows-disk-detail-0328.txt"
-set "FINGERPRINT=%WORK%\usb-media-target-fingerprint.txt"
-set "USBLETTER="
+set "EXPECTED_DISK_ID=E0BF3720"
+set "EXPECTED_USB_SIZE=114 GB"
+set "SCAN=%WORK%\usb-erase-preflight.txt"
+set "USBDETAIL=%WORK%\usb-erase-candidate.txt"
+set "OSDETAIL=%WORK%\usb-erase-windows-disk.txt"
+set "DPSCRIPT=%WORK%\usb-media-layout.txt"
+set "DPOUT=%WORK%\usb-media-layout-out.txt"
 set "USBDISK="
 set "OSDISK="
-set "USBID=UNKNOWN"
-set "USBTYPE=UNKNOWN"
-set "USBSIZE=UNKNOWN"
-set "USBUNIT=UNKNOWN"
-set "USBLINE=UNAVAILABLE"
-set "OSLINE=UNAVAILABLE"
-set "LABELMATCH=0"
 set "USBMATCH=0"
 set "OSMATCH=0"
-set "SIZEOK=NO"
+set "USBID=UNKNOWN"
 set "SAFE=NO"
 
 cls
 echo ================================================================
-echo WINRE-REPAIR - USB MEDIA TARGET IDENTIFICATION
- echo Version: %COMMAND_VERSION%
+echo WINRE-REPAIR - VERIFIED USB MEDIA PARTITIONING
+echo Version: %COMMAND_VERSION%
 echo Built:   %BUILD_TIME%
 echo Fetched: %date% %time%
-echo Mode:    READ-ONLY - NOTHING WILL BE ERASED
 echo ================================================================
 echo.
-echo Fail-closed identification of the existing %TARGET_LABEL% USB.
-echo This stage contains no clean, format, partition, or delete command.
+echo DESTRUCTIVE ACTION: the verified WINREPAIR USB will be erased.
+echo Internal Windows disk must independently resolve to a different disk.
+echo Expected USB fingerprint: USB / ID %EXPECTED_DISK_ID% / %EXPECTED_USB_SIZE%.
 echo.
 
 if not exist "%WORK%" md "%WORK%" >nul 2>&1
-if not exist "%DISKPART%" goto :SUMMARY
+if not exist "%DISKPART%" goto :FAIL
+if not exist "C:\Windows\System32\Config\SYSTEM" goto :FAIL
+if exist U:\ goto :FAIL_LETTER
+if exist V:\ goto :FAIL_LETTER
 if exist "%USBDETAIL%" del /f /q "%USBDETAIL%" >nul 2>&1
 if exist "%OSDETAIL%" del /f /q "%OSDETAIL%" >nul 2>&1
 
-rem First identify exactly one mounted volume by its existing known label.
-for %%L in (D E F G H I J K L M N O P Q R S T U V W Y Z) do (
-  vol %%L: 2>nul | "%FINDSTR%" /i /c:"%TARGET_LABEL%" >nul 2>&1
-  if not errorlevel 1 (
-    set /a LABELMATCH+=1
-    set "USBLETTER=%%L"
-  )
-)
-if not "!LABELMATCH!"=="1" goto :SUMMARY
-
-rem Capture the physical disk table once.
->"%LISTCMD%" echo list disk
-"%DISKPART%" /s "%LISTCMD%" >"%LISTOUT%" 2>&1
-
-rem Disk-centric scan: DETAIL DISK officially lists the volumes on that disk.
-rem Find the physical disk that actually contains WINREPAIR, and independently
-rem find the disk containing the C: Windows volume.
+rem Re-identify both disks from scratch. Disk numbers are not trusted alone.
 for /L %%D in (0,1,15) do (
-  >"%SCANCMD%" echo select disk %%D
-  >>"%SCANCMD%" echo detail disk
-  "%DISKPART%" /s "%SCANCMD%" >"%WORK%\disk-%%D-detail-0328.txt" 2>&1
+  >"%SCAN%" echo select disk %%D
+  >>"%SCAN%" echo detail disk
+  "%DISKPART%" /s "%SCAN%" >"%WORK%\erase-disk-%%D-detail.txt" 2>&1
 
-  "%FINDSTR%" /i /c:"%TARGET_LABEL%" "%WORK%\disk-%%D-detail-0328.txt" >nul 2>&1
+  "%FINDSTR%" /i /c:"%TARGET_LABEL%" "%WORK%\erase-disk-%%D-detail.txt" >nul 2>&1
   if not errorlevel 1 (
     set /a USBMATCH+=1
     set "USBDISK=%%D"
-    copy /y "%WORK%\disk-%%D-detail-0328.txt" "%USBDETAIL%" >nul 2>&1
+    copy /y "%WORK%\erase-disk-%%D-detail.txt" "%USBDETAIL%" >nul 2>&1
   )
 
-  "%FINDSTR%" /i /c:"Volume" "%WORK%\disk-%%D-detail-0328.txt" 2>nul | "%FINDSTR%" /R /C:"[ ]C[ ]" >nul 2>&1
+  "%FINDSTR%" /i /c:"Volume" "%WORK%\erase-disk-%%D-detail.txt" 2>nul | "%FINDSTR%" /R /C:"[ ]C[ ]" >nul 2>&1
   if not errorlevel 1 (
     set /a OSMATCH+=1
     set "OSDISK=%%D"
-    copy /y "%WORK%\disk-%%D-detail-0328.txt" "%OSDETAIL%" >nul 2>&1
+    copy /y "%WORK%\erase-disk-%%D-detail.txt" "%OSDETAIL%" >nul 2>&1
   )
 )
 
-if not "!USBMATCH!"=="1" goto :SUMMARY
-if not "!OSMATCH!"=="1" goto :SUMMARY
-if "!USBDISK!"=="!OSDISK!" goto :SUMMARY
-if not exist "%USBDETAIL%" goto :SUMMARY
+if not "!USBMATCH!"=="1" goto :FAIL
+if not "!OSMATCH!"=="1" goto :FAIL
+if "!USBDISK!"=="!OSDISK!" goto :FAIL
+if not exist "%USBDETAIL%" goto :FAIL
 
-rem Candidate must explicitly identify as USB in its physical-disk properties.
+rem Candidate must explicitly be USB and contain the exact known removable volume.
 "%FINDSTR%" /i /c:"Type" "%USBDETAIL%" 2>nul | "%FINDSTR%" /i /c:"USB" >nul 2>&1
-if errorlevel 1 goto :SUMMARY
-set "USBTYPE=USB"
+if errorlevel 1 goto :FAIL
+"%FINDSTR%" /i /c:"%TARGET_LABEL%" "%USBDETAIL%" 2>nul | "%FINDSTR%" /i /c:"Removable" >nul 2>&1
+if errorlevel 1 goto :FAIL
+"%FINDSTR%" /i /c:"%TARGET_LABEL%" "%USBDETAIL%" 2>nul | "%FINDSTR%" /i /c:"114 GB" >nul 2>&1
+if errorlevel 1 goto :FAIL
 
-rem Capture disk ID if DiskPart exposes one. UNKNOWN is displayed but is not
-rem trusted as an identifier by itself.
+rem Disk ID must match the previously observed physical USB fingerprint exactly.
 for /f "tokens=1,* delims=:" %%A in ('"%FINDSTR%" /i /c:"Disk ID:" "%USBDETAIL%" 2^>nul') do if /i "!USBID!"=="UNKNOWN" set "USBID=%%B"
 for /f "tokens=*" %%I in ("!USBID!") do set "USBID=%%I"
-if not defined USBID set "USBID=UNKNOWN"
+if /i not "!USBID!"=="%EXPECTED_DISK_ID%" goto :FAIL
 
-rem Parse the candidate and Windows rows from LIST DISK. Support both normal
-rem rows and the optional leading '*' focus marker.
-for /f "tokens=1,2,3,4,5,6,7" %%A in ('"%FINDSTR%" /i /c:"Disk" "%LISTOUT%"') do (
-  if /i "%%A"=="Disk" if "%%B"=="!USBDISK!" (
-    set "USBLINE=%%A %%B %%C %%D %%E %%F %%G"
-    set "USBSIZE=%%D"
-    set "USBUNIT=%%E"
-  )
-  if "%%A"=="*" if /i "%%B"=="Disk" if "%%C"=="!USBDISK!" (
-    set "USBLINE=%%A %%B %%C %%D %%E %%F %%G"
-    set "USBSIZE=%%E"
-    set "USBUNIT=%%F"
-  )
-  if /i "%%A"=="Disk" if "%%B"=="!OSDISK!" set "OSLINE=%%A %%B %%C %%D %%E %%F %%G"
-  if "%%A"=="*" if /i "%%B"=="Disk" if "%%C"=="!OSDISK!" set "OSLINE=%%A %%B %%C %%D %%E %%F %%G"
-)
-
-rem The user's USB is nominally 128 GB; Windows normally reports roughly
-rem 119 GB. Accept only a deliberately broad 100-140 GB physical-disk window.
-if /i "!USBUNIT!"=="GB" (
-  set /a USBNUM=!USBSIZE! 2>nul
-  if !USBNUM! GEQ 100 if !USBNUM! LEQ 140 set "SIZEOK=YES"
-)
-if /i not "!SIZEOK!"=="YES" goto :SUMMARY
-
+rem Extra hard stop: the candidate may never be Disk 0 on this machine.
+if "!USBDISK!"=="0" goto :FAIL
 set "SAFE=YES"
->"%FINGERPRINT%" echo Version=%COMMAND_VERSION%
->>"%FINGERPRINT%" echo ExistingLabel=%TARGET_LABEL%
->>"%FINGERPRINT%" echo ExistingDriveLetter=%USBLETTER%:
->>"%FINGERPRINT%" echo CandidateDisk=%USBDISK%
->>"%FINGERPRINT%" echo CandidateDiskID=%USBID%
->>"%FINGERPRINT%" echo CandidateType=%USBTYPE%
->>"%FINGERPRINT%" echo CandidateReportedSize=%USBSIZE% %USBUNIT%
->>"%FINGERPRINT%" echo WindowsDisk=%OSDISK%
 
-:SUMMARY
+echo ================================================================
+echo PREFLIGHT PASSED
+echo USB physical disk : !USBDISK!
+echo USB disk ID       : !USBID!
+echo Windows disk      : !OSDISK!
+echo ================================================================
+echo Erasing only the verified USB and creating media partitions...
+
+rem Create a UEFI-friendly FAT32 boot partition and an NTFS repair-data partition.
+>"%DPSCRIPT%" echo select disk !USBDISK!
+>>"%DPSCRIPT%" echo clean
+>>"%DPSCRIPT%" echo convert gpt
+>>"%DPSCRIPT%" echo create partition primary size=30000
+>>"%DPSCRIPT%" echo format fs=fat32 quick label=WIN11MEDIA
+>>"%DPSCRIPT%" echo assign letter=U
+>>"%DPSCRIPT%" echo create partition primary
+>>"%DPSCRIPT%" echo format fs=ntfs quick label=REPAIRDATA
+>>"%DPSCRIPT%" echo assign letter=V
+>>"%DPSCRIPT%" echo list volume
+>>"%DPSCRIPT%" echo detail disk
+
+"%DISKPART%" /s "%DPSCRIPT%" >"%DPOUT%" 2>&1
+if errorlevel 1 goto :FORMAT_FAIL
+
+if not exist U:\ goto :FORMAT_FAIL
+if not exist V:\ goto :FORMAT_FAIL
+vol U: | "%FINDSTR%" /i /c:"WIN11MEDIA" >nul 2>&1
+if errorlevel 1 goto :FORMAT_FAIL
+vol V: | "%FINDSTR%" /i /c:"REPAIRDATA" >nul 2>&1
+if errorlevel 1 goto :FORMAT_FAIL
+
 cls
 echo ================================================================
-echo USB MEDIA TARGET SNAPSHOT
+echo USB MEDIA LAYOUT READY
 echo Version: %COMMAND_VERSION%
 echo ================================================================
-echo Matching WINREPAIR volumes : %LABELMATCH%
-echo Existing drive letter      : %USBLETTER%:
-echo Disks containing WINREPAIR : %USBMATCH%
-echo Candidate physical disk    : %USBDISK%
-echo Candidate disk type        : %USBTYPE%
-echo Candidate disk ID          : %USBID%
-echo Candidate reported size    : %USBSIZE% %USBUNIT%
-echo 128-GB size check          : %SIZEOK%
-echo Disks containing Windows C : %OSMATCH%
-echo Windows C: physical disk   : %OSDISK%
+echo Verified erased disk : !USBDISK!
+echo Previous disk ID     : !USBID!
+echo Windows disk         : !OSDISK!  [NOT TOUCHED]
+echo Boot partition       : U:  WIN11MEDIA  FAT32  ~30 GB
+echo Repair-data partition: V:  REPAIRDATA   NTFS   remaining space
 echo ---------------------------------------------------------------
-echo Candidate LIST DISK row:
-echo %USBLINE%
-echo Windows LIST DISK row:
-echo %OSLINE%
-echo ---------------------------------------------------------------
-if exist "%USBDETAIL%" (
-  echo Candidate proof from DETAIL DISK:
-  "%FINDSTR%" /i /c:"Disk ID:" /c:"Type" /c:"%TARGET_LABEL%" "%USBDETAIL%" 2>nul
-)
-echo ---------------------------------------------------------------
-if /i "%SAFE%"=="YES" (
-  echo TARGET STATUS: SAFE_CANDIDATE_IDENTIFIED
-  echo NEXT STAGE IS NOT ARMED YET.
-) else (
-  echo TARGET STATUS: NOT_SAFE_TO_ERASE
-)
+echo NEXT: download/build Windows 11 24H2 repair media files.
 echo ================================================================
-echo NO FORMAT, CLEAN, PARTITION, OR FILE DELETE COMMAND WAS RUN.
 echo Take ONE photo of this screen and send it to ChatGPT.
 exit /b 0
+
+:FAIL_LETTER
+set "MSG=Drive letter U: or V: is already in use. USB was not erased."
+goto :FAIL_MSG
+:FORMAT_FAIL
+set "MSG=USB was selected correctly, but partitioning/format verification failed."
+goto :FAIL_MSG
+:FAIL
+set "MSG=USB identity preflight did not exactly match the verified fingerprint. Nothing was erased."
+:FAIL_MSG
+cls
+echo ================================================================
+echo USB MEDIA STAGE STOPPED
+echo %MSG%
+echo ================================================================
+echo Candidate disk: !USBDISK!
+echo Candidate ID  : !USBID!
+echo Windows disk  : !OSDISK!
+echo USB matches   : !USBMATCH!
+echo OS matches    : !OSMATCH!
+echo ================================================================
+exit /b 90
