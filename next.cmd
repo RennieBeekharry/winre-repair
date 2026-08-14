@@ -2,13 +2,13 @@
 setlocal EnableExtensions EnableDelayedExpansion
 rem WR_RISK=REPAIR_WRITE
 rem WR_LOCAL_AUTH=NOT_REQUIRED
-rem WR_SUMMARY=Stage RescueMeAI persistent agent v2 and wait for explicit local start confirmation.
+rem WR_SUMMARY=Stage RescueMeAI persistent agent v2 with a simplified operator start screen.
 rem WR_ACTION=START_RESCUEMEAI_AGENT_V2
 rem WR_TARGET=RescueMeAI recovery tooling and private command channel only.
-rem WR_CONSEQUENCE=Stages validated RescueMeAI tooling and starts the listener only after the user presses Enter.
-rem WR_ROLLBACK=The listener can be stopped safely while waiting. No Windows recovery action is performed by this startup transition.
+rem WR_CONSEQUENCE=Stages validated RescueMeAI tooling and starts only after local confirmation.
+rem WR_ROLLBACK=The listener can be stopped safely while waiting. No Windows repair runs here.
 
-set "COMMAND_VERSION=RMAI-2026.08.14-AGENT-START-2"
+set "COMMAND_VERSION=RMAI-2026.08.14-AGENT-START-3"
 set "DESCRIPTION=AI-ASSISTED WINDOWS RECOVERY"
 set "WORK=C:\WinRERepair"
 set "RUNTIME=%WORK%\runtime"
@@ -34,12 +34,9 @@ set "GITHUB_APP_CLIENT_ID=Iv23lif9UoXW4QvUh8tJ"
 set "APIIP="
 set "WEBIP="
 set "FAIL_RC=90"
-set "FAIL_REASON=RescueMeAI persistent agent startup did not complete."
-set "UI_WIDTH=96"
-set "UI_TEXT_WIDTH=92"
+set "FAIL_REASON=RescueMeAI could not prepare the persistent agent."
 set "UI_BORDER================================================================================================="
 set "UI_RULE=------------------------------------------------------------------------------------------------"
-set "UI_SPACES=                                                                                                    "
 
 title RescueMeAI - Windows Recovery
 if not exist "%WORK%" md "%WORK%" >nul 2>&1
@@ -47,9 +44,7 @@ if not exist "%RUNTIME%" md "%RUNTIME%" >nul 2>&1
 if not exist "%AUTHDIR%" md "%AUTHDIR%" >nul 2>&1
 "%MODE%" con: cols=100 lines=50 >nul 2>&1
 
-call :HEADER INFO "PREPARING PERSISTENT AGENT"
-call :SECTION "WHAT IS HAPPENING"
-call :WRAP "RescueMeAI is validating the saved private-channel authorization and staging a pinned persistent agent. No Windows repair action is running."
+call :SHOW_PREPARING
 
 if not exist "%CURL%" (
   set "FAIL_RC=91"
@@ -63,7 +58,7 @@ if not exist "%FINDSTR%" (
 )
 if not exist "%CSCRIPT%" (
   set "FAIL_RC=91"
-  set "FAIL_REASON=Required Windows Script Host cscript.exe is unavailable in this WinRE environment."
+  set "FAIL_REASON=Windows Script Host is unavailable in this WinRE environment."
   goto :APP_FATAL
 )
 if not exist "%TOKEN%" (
@@ -73,34 +68,36 @@ if not exist "%TOKEN%" (
 )
 for %%Z in ("%TOKEN%") do if %%~zZ LSS 16 (
   set "FAIL_RC=96"
-  set "FAIL_REASON=The saved RescueMeAI GitHub authorization token is unexpectedly small."
+  set "FAIL_REASON=The saved RescueMeAI GitHub authorization token is invalid."
   goto :APP_FATAL
 )
 
 call :DOH_RESOLVE_A "%APIHOST%" APIIP
 if not defined APIIP (
   set "FAIL_RC=92"
-  set "FAIL_REASON=DNS-over-HTTPS could not resolve api.github.com for agent staging."
+  set "FAIL_REASON=RescueMeAI could not resolve api.github.com."
   goto :APP_FATAL
 )
 call :TEST_HOST "%APIHOST%" "!APIIP!"
 if errorlevel 1 (
   set "FAIL_RC=92"
-  set "FAIL_REASON=The resolved api.github.com address failed HTTPS validation."
+  set "FAIL_REASON=GitHub API HTTPS validation failed."
   goto :APP_FATAL
 )
+
 call :DOH_RESOLVE_A "%WEBHOST%" WEBIP
 if not defined WEBIP (
   set "FAIL_RC=92"
-  set "FAIL_REASON=DNS-over-HTTPS could not resolve github.com for token maintenance."
+  set "FAIL_REASON=RescueMeAI could not resolve github.com."
   goto :APP_FATAL
 )
 call :TEST_HOST "%WEBHOST%" "!WEBIP!"
 if errorlevel 1 (
   set "FAIL_RC=92"
-  set "FAIL_REASON=The resolved github.com address failed HTTPS validation."
+  set "FAIL_REASON=GitHub HTTPS validation failed."
   goto :APP_FATAL
 )
+
 >"%WORK%\github-api-ip.txt" echo(!APIIP!
 >"%WORK%\github-web-ip.txt" echo(!WEBIP!
 
@@ -122,64 +119,117 @@ if errorlevel 1 goto :APP_FATAL
 >>"%CONFIG%" echo SOURCE_REPO=%SOURCE_REPO%
 >>"%CONFIG%" echo SOURCE_REF=%SOURCE_REF%
 
-:START_CONFIRM
-call :HEADER INFO "PERSISTENT AGENT READY"
-call :SECTION "YOU ARE IN CONTROL"
-call :WRAP "RescueMeAI is ready but has NOT started the persistent listener yet."
-call :WRAP "Press ENTER to start. Once online, RescueMeAI will remain on one stable status screen and continue automatically when validated commands arrive."
-call :WRAP "While the agent is WAITING, press S to stop it safely. Active repair writes are never interrupted halfway; stop control resumes at the next safe waiting boundary."
-call :WRAP "If RescueMeAI itself has a fatal application failure, the error screen will stay visible until you press a key to return to Command Prompt."
+:START_MENU
+cls
+color 0B >nul 2>&1
+echo %UI_BORDER%
+echo                               RESCUEMEAI
+echo                       AI-ASSISTED WINDOWS RECOVERY
+echo %UI_BORDER%
+echo Version        : %COMMAND_VERSION%
+echo Internet       : [CONNECTED]
+echo Status         : READY TO START
+echo Windows changes: NONE
+echo %UI_BORDER%
+echo.
+echo                         RESCUEMEAI IS READY
+echo %UI_RULE%
+echo.
+echo Nothing is being changed on Windows right now.
+echo.
+echo When you start RescueMeAI:
+echo   1. It stays open and waits for validated recovery instructions.
+echo   2. It shows when a command is running and what risk level it has.
+echo   3. It sends results to the private support channel automatically.
+echo   4. A failed repair does NOT close RescueMeAI; it waits for the next step.
+echo   5. Destructive actions still require separate LOCAL approval.
+echo.
+echo %UI_RULE%
+echo.
+echo   [ENTER]  START RESCUEMEAI
+echo   [STOP]   RETURN TO COMMAND PROMPT
+echo.
+echo After starting, press S only while RescueMeAI shows WAITING to stop safely.
+echo Active repair writes are never interrupted halfway.
 echo.
 set "START_INPUT="
-set /p "START_INPUT=Press ENTER to start, or type STOP and press ENTER to return to CMD: "
+set /p "START_INPUT=Your choice: "
 if /i "!START_INPUT!"=="STOP" goto :USER_EXIT
-if defined START_INPUT goto :START_CONFIRM
+if defined START_INPUT (
+  echo.
+  echo Invalid choice. Press ENTER to start, or type STOP and press ENTER.
+  echo.
+  pause >nul
+  goto :START_MENU
+)
 
 call "%AGENT%"
 set "AGENT_RC=!errorlevel!"
 if "!AGENT_RC!"=="0" goto :STOPPED
 set "FAIL_RC=!AGENT_RC!"
-set "FAIL_REASON=The RescueMeAI persistent agent encountered an application-level failure and cannot safely continue."
+set "FAIL_REASON=The RescueMeAI application cannot safely continue."
 goto :APP_FATAL
 
 :STOPPED
-call :HEADER WARNING "PERSISTENT AGENT STOPPED"
-call :SECTION "SAFE STOP"
-call :WRAP "The RescueMeAI listener stopped at a safe boundary. No active recovery command was interrupted."
-call :WRAP "Run C:\wr.cmd again only when you want to restart the persistent listener."
-call :SECTION "NEXT"
-call :WRAP "Press any key to return to the Windows Recovery command prompt."
+cls
+color 0E >nul 2>&1
+echo %UI_BORDER%
+echo                               RESCUEMEAI
+echo %UI_BORDER%
+echo Status         : STOPPED SAFELY
+echo Windows changes: NO ACTIVE COMMAND WAS INTERRUPTED
+echo %UI_BORDER%
+echo.
+echo RescueMeAI stopped at a safe waiting boundary.
+echo.
+echo Press any key to return to the Windows Recovery command prompt.
 pause >nul
-color 07 >nul 2>&1
-title Command Prompt
-exit /b 0
+goto :RETURN_CMD
 
 :USER_EXIT
-call :HEADER WARNING "START CANCELLED"
-call :SECTION "NO AGENT STARTED"
-call :WRAP "The persistent listener was not started. No Windows recovery action was performed."
-call :WRAP "Press any key to return to the Windows Recovery command prompt."
+cls
+color 0E >nul 2>&1
+echo %UI_BORDER%
+echo                               RESCUEMEAI
+echo %UI_BORDER%
+echo Status         : START CANCELLED
+echo Windows changes: NONE
+echo %UI_BORDER%
+echo.
+echo RescueMeAI was not started.
+echo.
+echo Press any key to return to the Windows Recovery command prompt.
 pause >nul
-color 07 >nul 2>&1
-title Command Prompt
-exit /b 0
+goto :RETURN_CMD
 
 :APP_FATAL
-call :HEADER ERROR "APP_FATAL - RESCUEMEAI CANNOT CONTINUE"
-call :SECTION "[APP_FATAL] PERSISTENT AGENT STOPPED FAIL-CLOSED"
-call :LINE "Return code : !FAIL_RC!"
-call :SECTION "REASON"
-call :WRAP "!FAIL_REASON!"
-call :SECTION "SAFETY"
-call :WRAP "RescueMeAI will execute no further recovery actions from this process. Existing private/local evidence is preserved for diagnosis."
-call :SECTION "WHAT YOU SHOULD DO"
-call :WRAP "Reply to ChatGPT with exactly: fail. The error screen will remain visible until you are ready."
-call :WRAP "Press any key only when you want to return to the Windows Recovery command prompt."
-call :LINE "%UI_BORDER%"
+cls
+color 0C >nul 2>&1
+echo %UI_BORDER%
+echo                               RESCUEMEAI
+echo                       APPLICATION FAILURE
+echo %UI_BORDER%
+echo Version        : %COMMAND_VERSION%
+echo Status         : APP_FATAL
+echo Windows changes: STOPPED - NO FURTHER ACTION WILL RUN
+echo Return code    : !FAIL_RC!
+echo %UI_BORDER%
+echo.
+echo WHAT HAPPENED
+echo %UI_RULE%
+echo !FAIL_REASON!
+echo.
+echo RescueMeAI stopped itself because it cannot safely continue.
+echo Existing local/private evidence is preserved for diagnosis.
+echo.
+echo WHAT YOU SHOULD DO
+echo %UI_RULE%
+echo Reply to ChatGPT with exactly: fail
+echo.
+echo This screen will stay visible until you are ready.
+echo Press any key to return to the Windows Recovery command prompt.
 pause >nul
-color 07 >nul 2>&1
-title Command Prompt
-exit /b !FAIL_RC!
+goto :RETURN_CMD_FAIL
 
 :FETCH_PINNED
 set "SRC_PATH=%~1"
@@ -192,29 +242,29 @@ if exist "%TMP%" del /f /q "%TMP%" >nul 2>&1
 set "FRC=!errorlevel!"
 if not "!FRC!"=="0" (
   set "FAIL_RC=90"
-  set "FAIL_REASON=Could not download pinned RescueMeAI component %SRC_PATH%."
+  set "FAIL_REASON=Could not download required RescueMeAI component %SRC_PATH%."
   exit /b 1
 )
 if not exist "%TMP%" (
   set "FAIL_RC=90"
-  set "FAIL_REASON=Pinned RescueMeAI component %SRC_PATH% was not created after download."
+  set "FAIL_REASON=Required RescueMeAI component %SRC_PATH% was not created."
   exit /b 1
 )
 for %%Z in ("%TMP%") do if %%~zZ LSS 64 (
   set "FAIL_RC=96"
-  set "FAIL_REASON=Pinned RescueMeAI component %SRC_PATH% was unexpectedly small."
+  set "FAIL_REASON=Downloaded RescueMeAI component %SRC_PATH% was unexpectedly small."
   exit /b 1
 )
 "%FINDSTR%" /i /c:"%MARK%" "%TMP%" >nul 2>&1
 if errorlevel 1 (
   set "FAIL_RC=96"
-  set "FAIL_REASON=Pinned RescueMeAI component %SRC_PATH% failed marker validation."
+  set "FAIL_REASON=Downloaded RescueMeAI component %SRC_PATH% failed validation."
   exit /b 1
 )
 move /y "%TMP%" "%DEST%" >nul 2>&1
 if errorlevel 1 (
   set "FAIL_RC=97"
-  set "FAIL_REASON=Pinned RescueMeAI component %SRC_PATH% could not be staged locally."
+  set "FAIL_REASON=Validated RescueMeAI component %SRC_PATH% could not be staged."
   exit /b 1
 )
 exit /b 0
@@ -264,78 +314,29 @@ set "TH_IP=%~2"
 "%CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 10 --max-time 30 --resolve "%TH_HOST%:443:%TH_IP%" -I "https://%TH_HOST%/" -o NUL >nul 2>&1
 exit /b !errorlevel!
 
-:HEADER
-set "THEME=%~1"
-set "STEP=%~2"
-set "C=07"
-if /i "!THEME!"=="INFO" set "C=0B"
-if /i "!THEME!"=="PASS" set "C=0A"
-if /i "!THEME!"=="WARNING" set "C=0E"
-if /i "!THEME!"=="ERROR" set "C=0C"
-color !C! >nul 2>&1
+:SHOW_PREPARING
 cls
-call :LINE "%UI_BORDER%"
-call :CENTER "RESCUEMEAI"
-call :CENTER "%DESCRIPTION%"
-call :LINE "%UI_BORDER%"
-call :LINE "Version      : %COMMAND_VERSION%"
-call :LINE "Internet     : [CONNECTED]"
-call :LINE "Current Step : !STEP!"
-call :LINE "Safety       : NO WINDOWS RECOVERY ACTION"
-call :LINE "Legal        : https://github.com/RennieBeekharry/winre-repair"
-call :LINE "Legal file   : LEGAL.md"
-call :LINE "%UI_BORDER%"
-exit /b 0
-
-:SECTION
+color 0B >nul 2>&1
+echo %UI_BORDER%
+echo                               RESCUEMEAI
+echo                       AI-ASSISTED WINDOWS RECOVERY
+echo %UI_BORDER%
+echo Version        : %COMMAND_VERSION%
+echo Internet       : [CONNECTED]
+echo Status         : PREPARING
+echo Windows changes: NONE
+echo %UI_BORDER%
 echo.
-call :LINE "%~1"
-call :LINE "%UI_RULE%"
+echo Preparing the secure recovery agent...
+echo No Windows repair action is running.
 exit /b 0
 
-:WRAP
-set "T=%~1"
-set "L="
-for %%W in (!T!) do (
-  if not defined L (
-    set "L=%%W"
-  ) else (
-    set "CAND=!L! %%W"
-    call :STRLEN "!CAND!" N
-    if !N! GTR %UI_TEXT_WIDTH% (
-      call :LINE "!L!"
-      set "L=%%W"
-    ) else (
-      set "L=!CAND!"
-    )
-  )
-)
-if defined L call :LINE "!L!"
+:RETURN_CMD
+color 07 >nul 2>&1
+title Command Prompt
 exit /b 0
 
-:CENTER
-set "T=%~1"
-call :STRLEN "!T!" N
-set /a P=(UI_WIDTH-N)/2
-if !P! LSS 0 set "P=0"
-set "OUT=!UI_SPACES:~0,%P%!!T!"
-call :LINE "!OUT!"
-exit /b 0
-
-:LINE
-set "T=%~1"
-call :STRLEN "!T!" N
-if !N! GTR %UI_WIDTH% set "T=!T:~0,%UI_WIDTH%!"
-echo(!T!
-exit /b 0
-
-:STRLEN
-set "S=%~1"
-set /a N=0
-:STRLEN_LOOP
-if not "!S:~%N%,1!"=="" (
-  set /a N+=1
-  if !N! LSS 512 goto :STRLEN_LOOP
-)
-set "%~2=%N%"
-exit /b 0
+:RETURN_CMD_FAIL
+color 07 >nul 2>&1
+title Command Prompt
+exit /b !FAIL_RC!
