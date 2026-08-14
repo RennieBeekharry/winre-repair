@@ -1,138 +1,197 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-rem WR-MODULE: ui 2026.08.14-1240-ET
-rem RescueMeAI console UI standard. Pure batch for WinRE compatibility.
+rem WR-MODULE: ui 2026.08.14-1305-ET
+rem Central RescueMeAI console renderer for WinRE.
+rem All user-facing colors are selected here by semantic message type.
 
-set "RMAI_UI_LEGAL=https://github.com/RennieBeekharry/winre-repair/blob/main/LEGAL.md"
 set "RMAI_UI_DESC=AI-ASSISTED WINDOWS RECOVERY"
+set "RMAI_UI_LEGAL_BASE=https://github.com/RennieBeekharry/winre-repair"
+set "RMAI_UI_LEGAL_FILE=LEGAL.md"
+set "RMAI_UI_WIDTH=96"
+set "RMAI_UI_TEXT_WIDTH=92"
+set "RMAI_UI_BORDER================================================================================================="
+set "RMAI_UI_SPACES=                                                                                                    "
+set "RMAI_UI_FINDSTR=C:\Windows\System32\findstr.exe"
+if not exist "%RMAI_UI_FINDSTR%" set "RMAI_UI_FINDSTR=findstr.exe"
+set "RMAI_UI_MODE=C:\Windows\System32\mode.com"
+if not exist "%RMAI_UI_MODE%" set "RMAI_UI_MODE=mode"
+set "RMAI_UI_TMP=%TEMP%\rmai-ui-%RANDOM%%RANDOM%.txt"
 
-if /i "%~1"=="screen" goto :SCREEN_ENTRY
-if /i "%~1"=="header" goto :HEADER_COMPAT
+if /i "%~1"=="setup" goto :SETUP
+if /i "%~1"=="screen" goto :SCREEN
+if /i "%~1"=="line" goto :LINE
+if /i "%~1"=="wrap" goto :WRAP
+if /i "%~1"=="section" goto :SECTION
+if /i "%~1"=="center" goto :CENTER_ENTRY
 if /i "%~1"=="result" goto :RESULT
-if /i "%~1"=="note" goto :NOTE
-if /i "%~1"=="prompt" goto :PROMPT
+if /i "%~1"=="header" goto :HEADER_COMPAT
+if /i "%~1"=="note" goto :NOTE_COMPAT
 exit /b 64
 
-:SCREEN_ENTRY
-rem screen VERSION INTERNET STEP SAFETY DESCRIPTION COLOR
+:SETUP
+rem A slightly wider console improves readability while remaining lightweight.
+"%RMAI_UI_MODE%" con: cols=100 lines=50 >nul 2>&1
+exit /b 0
+
+:SCREEN
+rem screen VERSION INTERNET STEP SAFETY [DESCRIPTION]
+call :SETUP
 set "UI_VERSION=%~2"
 set "UI_INTERNET=%~3"
 set "UI_STEP=%~4"
 set "UI_SAFETY=%~5"
 set "UI_DESC=%~6"
-set "UI_COLOR=%~7"
 if not defined UI_DESC set "UI_DESC=%RMAI_UI_DESC%"
-if not defined UI_COLOR set "UI_COLOR=07"
-call :SCREEN
-exit /b 0
-
-:HEADER_COMPAT
-rem Backward-compatible mapping for older callers:
-rem header TITLE VERSION DESCRIPTION
-set "UI_VERSION=%~3"
-set "UI_INTERNET=%RMAI_INTERNET_STATUS%"
-set "UI_STEP=%~2"
-set "UI_SAFETY=%RMAI_SAFETY%"
-set "UI_DESC=%~4"
-set "UI_COLOR=%RMAI_UI_COLOR%"
-if not defined UI_INTERNET set "UI_INTERNET=CHECKING"
-if not defined UI_SAFETY set "UI_SAFETY=CONTROLLED RECOVERY"
-if not defined UI_DESC set "UI_DESC=%RMAI_UI_DESC%"
-if not defined UI_COLOR set "UI_COLOR=0B"
-call :SCREEN
-exit /b 0
-
-:SCREEN
-color !UI_COLOR! >nul 2>&1
 cls
-echo ========================================================================
-call :CENTER "RESCUEMEAI"
-call :CENTER "!UI_DESC!"
-echo ========================================================================
-echo  Version      : !UI_VERSION!
-echo  Internet     : !UI_INTERNET!
-echo  Current Step : !UI_STEP!
-echo  Safety       : !UI_SAFETY!
-echo  Legal        :
-echo    %RMAI_UI_LEGAL%
-echo ========================================================================
+call :PAINT HEADER "%RMAI_UI_BORDER%"
+call :CENTER_PAINT HEADER "RESCUEMEAI"
+call :CENTER_PAINT HEADER "!UI_DESC!"
+call :PAINT HEADER "%RMAI_UI_BORDER%"
+call :PAINT LABEL "Version      : !UI_VERSION!"
+if /i "!UI_INTERNET!"=="CONNECTED" (
+  call :PAINT PASS "Internet     : [CONNECTED]"
+) else if /i "!UI_INTERNET!"=="NOT CONNECTED" (
+  call :PAINT ERROR "Internet     : [NOT CONNECTED]"
+) else (
+  call :PAINT WARNING "Internet     : [!UI_INTERNET!]"
+)
+call :PAINT INFO "Current Step : !UI_STEP!"
+call :PAINT LABEL "Safety       : !UI_SAFETY!"
+call :PAINT LABEL "Legal        : %RMAI_UI_LEGAL_BASE%"
+call :PAINT LABEL "Legal file   : %RMAI_UI_LEGAL_FILE%"
+call :PAINT HEADER "%RMAI_UI_BORDER%"
 exit /b 0
 
-:NOTE
-echo %~2
+:LINE
+rem line TYPE TEXT
+call :PAINT "%~2" "%~3"
 exit /b 0
 
-:PROMPT
-rem prompt LABEL [VARIABLE]
-set "UI_PROMPT_LABEL=%~2"
-set "UI_PROMPT_VAR=%~3"
-if not defined UI_PROMPT_LABEL set "UI_PROMPT_LABEL=ENTER VALUE"
-if not defined UI_PROMPT_VAR set "UI_PROMPT_VAR=RMAI_UI_INPUT"
-set "%UI_PROMPT_VAR%="
-set /p "%UI_PROMPT_VAR%=%UI_PROMPT_LABEL%: "
+:WRAP
+rem wrap TYPE TEXT
+set "UI_WRAP_TYPE=%~2"
+set "UI_WRAP_TEXT=%~3"
+call :WRAP_TEXT
+exit /b 0
+
+:SECTION
+echo.
+call :PAINT "%~2" "%~3"
+call :PAINT MUTED "------------------------------------------------------------------------------------------------"
+exit /b 0
+
+:CENTER_ENTRY
+call :CENTER_PAINT "%~2" "%~3"
 exit /b 0
 
 :RESULT
-rem result STATE MESSAGE EVIDENCE INSTRUCTION [VERSION] [INTERNET]
-set "WR_UI_STATE=%~2"
-set "WR_UI_MESSAGE=%~3"
-set "WR_UI_EVIDENCE=%~4"
-set "WR_UI_INSTRUCTION=%~5"
-set "WR_UI_VERSION=%~6"
-set "WR_UI_INTERNET=%~7"
-set "WR_UI_REPLY=warning"
-set "WR_UI_COLOR=0E"
-if /i "%WR_UI_STATE%"=="PASS" (
-  set "WR_UI_COLOR=0A"
-  set "WR_UI_REPLY=pass"
+rem result STATE MESSAGE EVIDENCE INSTRUCTION VERSION INTERNET
+set "UI_STATE=%~2"
+set "UI_MESSAGE=%~3"
+set "UI_EVIDENCE=%~4"
+set "UI_INSTRUCTION=%~5"
+set "UI_VERSION=%~6"
+set "UI_INTERNET=%~7"
+if not defined UI_VERSION set "UI_VERSION=UNKNOWN"
+if not defined UI_INTERNET set "UI_INTERNET=UNKNOWN"
+if not defined UI_EVIDENCE set "UI_EVIDENCE=None."
+if not defined UI_INSTRUCTION set "UI_INSTRUCTION=Follow the instruction shown by RescueMeAI."
+set "UI_REPLY=warning"
+set "UI_TYPE=WARNING"
+if /i "!UI_STATE!"=="PASS" (
+  set "UI_REPLY=pass"
+  set "UI_TYPE=PASS"
 )
-if /i "%WR_UI_STATE%"=="FAIL" (
-  set "WR_UI_COLOR=0C"
-  set "WR_UI_REPLY=fail"
+if /i "!UI_STATE!"=="FAIL" (
+  set "UI_REPLY=fail"
+  set "UI_TYPE=ERROR"
 )
-if not defined WR_UI_VERSION set "WR_UI_VERSION=%RMAI_VERSION%"
-if not defined WR_UI_VERSION set "WR_UI_VERSION=UNKNOWN"
-if not defined WR_UI_INTERNET set "WR_UI_INTERNET=%RMAI_INTERNET_STATUS%"
-if not defined WR_UI_INTERNET set "WR_UI_INTERNET=UNKNOWN"
-if not defined WR_UI_EVIDENCE set "WR_UI_EVIDENCE=None."
-if not defined WR_UI_INSTRUCTION set "WR_UI_INSTRUCTION=Follow the instruction shown by RescueMeAI."
-
-set "UI_VERSION=%WR_UI_VERSION%"
-set "UI_INTERNET=%WR_UI_INTERNET%"
-set "UI_STEP=%WR_UI_STATE% RESULT"
-set "UI_SAFETY=NO NEW ACTION"
-set "UI_DESC=%RMAI_UI_DESC%"
-set "UI_COLOR=%WR_UI_COLOR%"
-call :SCREEN
-echo.
-echo [!WR_UI_STATE!] RESCUEMEAI RESULT
-echo ------------------------------------------------------------------------
-echo RESULT:
-echo   !WR_UI_MESSAGE!
-echo.
-echo WHAT YOU SHOULD DO:
-echo   Reply to ChatGPT with exactly: !WR_UI_REPLY!
-echo.
-echo ADDITIONAL INFORMATION REQUIRED:
-echo   !WR_UI_EVIDENCE!
-echo.
-echo ADDITIONAL INSTRUCTIONS:
-echo   !WR_UI_INSTRUCTION!
-echo ------------------------------------------------------------------------
-echo Do not rerun commands unless RescueMeAI explicitly asks you to.
-echo ========================================================================
+call :SCREEN "!UI_VERSION!" "!UI_INTERNET!" "!UI_STATE! RESULT" "NO NEW ACTION" "%RMAI_UI_DESC%"
+call :SECTION "!UI_TYPE!" "[!UI_STATE!] RESCUEMEAI RESULT"
+call :WRAP "!UI_TYPE!" "!UI_MESSAGE!"
+call :SECTION INSTRUCTION "WHAT YOU SHOULD DO"
+call :WRAP INSTRUCTION "Reply to ChatGPT with exactly: !UI_REPLY!"
+call :SECTION INFO "ADDITIONAL INFORMATION REQUIRED"
+call :WRAP INFO "!UI_EVIDENCE!"
+call :SECTION INSTRUCTION "ADDITIONAL INSTRUCTIONS"
+call :WRAP INSTRUCTION "!UI_INSTRUCTION!"
+call :PAINT MUTED "%RMAI_UI_BORDER%"
 exit /b 0
 
-:CENTER
-set "CENTER_TEXT=%~1"
-set /a CENTER_LEN=0
-:CENTER_LEN_LOOP
-if not "!CENTER_TEXT:~%CENTER_LEN%,1!"=="" (
-  set /a CENTER_LEN+=1
-  if !CENTER_LEN! LSS 72 goto :CENTER_LEN_LOOP
+:HEADER_COMPAT
+rem Backward-compatible header TITLE VERSION DESCRIPTION.
+set "UI_INET=%RMAI_INTERNET_STATUS%"
+if not defined UI_INET set "UI_INET=CHECKING"
+set "UI_SAFE=%RMAI_SAFETY%"
+if not defined UI_SAFE set "UI_SAFE=CONTROLLED RECOVERY"
+call :SCREEN "%~3" "!UI_INET!" "%~2" "!UI_SAFE!" "%~4"
+exit /b 0
+
+:NOTE_COMPAT
+call :WRAP INFO "%~2"
+exit /b 0
+
+:WRAP_TEXT
+set "UI_LINE="
+for %%W in (!UI_WRAP_TEXT!) do (
+  if not defined UI_LINE (
+    set "UI_LINE=%%W"
+  ) else (
+    set "UI_CANDIDATE=!UI_LINE! %%W"
+    call :STRLEN "!UI_CANDIDATE!" UI_LEN
+    if !UI_LEN! GTR %RMAI_UI_TEXT_WIDTH% (
+      call :PAINT "!UI_WRAP_TYPE!" "!UI_LINE!"
+      set "UI_LINE=%%W"
+    ) else (
+      set "UI_LINE=!UI_CANDIDATE!"
+    )
+  )
 )
-set /a CENTER_PAD=(72-CENTER_LEN)/2
-if !CENTER_PAD! LSS 0 set "CENTER_PAD=0"
-set "CENTER_SPACES=                                                                        "
-echo !CENTER_SPACES:~0,%CENTER_PAD%!!CENTER_TEXT!
+if defined UI_LINE call :PAINT "!UI_WRAP_TYPE!" "!UI_LINE!"
+if not defined UI_LINE echo.
+exit /b 0
+
+:CENTER_PAINT
+set "UI_CENTER_TYPE=%~1"
+set "UI_CENTER_TEXT=%~2"
+call :STRLEN "!UI_CENTER_TEXT!" UI_CENTER_LEN
+set /a UI_PAD=(%RMAI_UI_WIDTH%-UI_CENTER_LEN)/2
+if !UI_PAD! LSS 0 set "UI_PAD=0"
+set "UI_CENTER_LINE=!RMAI_UI_SPACES:~0,%UI_PAD%!!UI_CENTER_TEXT!"
+call :PAINT "!UI_CENTER_TYPE!" "!UI_CENTER_LINE!"
+exit /b 0
+
+:PAINT
+rem PAINT is the only color-selection function.
+set "UI_SEM=%~1"
+set "UI_TEXT=%~2"
+set "UI_ATTR=07"
+if /i "!UI_SEM!"=="HEADER" set "UI_ATTR=0B"
+if /i "!UI_SEM!"=="INFO" set "UI_ATTR=09"
+if /i "!UI_SEM!"=="PASS" set "UI_ATTR=0A"
+if /i "!UI_SEM!"=="SUCCESS" set "UI_ATTR=0A"
+if /i "!UI_SEM!"=="WARNING" set "UI_ATTR=0E"
+if /i "!UI_SEM!"=="ERROR" set "UI_ATTR=0C"
+if /i "!UI_SEM!"=="FAIL" set "UI_ATTR=0C"
+if /i "!UI_SEM!"=="INSTRUCTION" set "UI_ATTR=0F"
+if /i "!UI_SEM!"=="PROMPT" set "UI_ATTR=0D"
+if /i "!UI_SEM!"=="MUTED" set "UI_ATTR=08"
+if /i "!UI_SEM!"=="LABEL" set "UI_ATTR=07"
+call :STRLEN "!UI_TEXT!" UI_PRINT_LEN
+if !UI_PRINT_LEN! GTR %RMAI_UI_WIDTH% set "UI_TEXT=!UI_TEXT:~0,%RMAI_UI_WIDTH%!"
+>"%RMAI_UI_TMP%" echo(!UI_TEXT!
+"%RMAI_UI_FINDSTR%" /a:!UI_ATTR! /r "^" "%RMAI_UI_TMP%" 2>nul
+if errorlevel 1 echo(!UI_TEXT!
+del /f /q "%RMAI_UI_TMP%" >nul 2>&1
+exit /b 0
+
+:STRLEN
+set "UI_SL_TEXT=%~1"
+set /a UI_SL_LEN=0
+:STRLEN_LOOP
+if not "!UI_SL_TEXT:~%UI_SL_LEN%,1!"=="" (
+  set /a UI_SL_LEN+=1
+  if !UI_SL_LEN! LSS 512 goto :STRLEN_LOOP
+)
+set "%~2=%UI_SL_LEN%"
 exit /b 0
