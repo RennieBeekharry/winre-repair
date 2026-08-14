@@ -26,7 +26,10 @@ set "UID=44ac3fa1-0cef-463b-a650-6240d396f894"
 set "D="
 set "IP="
 if not exist "%M%" md "%M%" >nul 2>&1
-for %%X in (D E F G H I J K L M N O P Q R S T U V W Y Z) do (vol %%X: 2>nul|"%F%" /i /c:"REPAIRDATA" >nul 2>&1&if not errorlevel 1 if not defined D set "D=%%X:")
+for %%X in (D E F G H I J K L M N O P Q R S T U V W Y Z) do (
+  vol %%X: 2>nul | "%F%" /i /c:"REPAIRDATA" >nul 2>&1
+  if not errorlevel 1 if not defined D set "D=%%X:"
+)
 if not defined D goto :NOVOL
 set "DEST=%D%\RescueMeAI\Media\UUP\26100.8894-amd64-core-en-us"
 for %%P in ("%D%\RescueMeAI" "%D%\RescueMeAI\Media" "%D%\RescueMeAI\Media\UUP" "%DEST%") do if not exist %%P md %%P >nul 2>&1
