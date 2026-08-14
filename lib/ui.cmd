@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-rem WR-MODULE: ui 2026.08.14-1225-ET
+rem WR-MODULE: ui 2026.08.14-1240-ET
 rem RescueMeAI console UI standard. Pure batch for WinRE compatibility.
 
 set "RMAI_UI_LEGAL=https://github.com/RennieBeekharry/winre-repair/blob/main/LEGAL.md"
@@ -53,7 +53,8 @@ echo  Version      : !UI_VERSION!
 echo  Internet     : !UI_INTERNET!
 echo  Current Step : !UI_STEP!
 echo  Safety       : !UI_SAFETY!
-echo  Legal        : %RMAI_UI_LEGAL%
+echo  Legal        :
+echo    %RMAI_UI_LEGAL%
 echo ========================================================================
 exit /b 0
 
