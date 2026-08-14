@@ -1,6 +1,6 @@
 # RescueMeAI™ Console UI Standard
 
-**UI standard version:** 2026-08-14.2
+**UI standard version:** 2026-08-14.3
 
 RescueMeAI runs in environments where the user may be under stress, working from WinRE, or reading a low-resolution console. The UI must favor clarity, consistency, and minimal interaction over decorative complexity.
 
@@ -61,7 +61,13 @@ Supported semantic types:
 - `LABEL` → normal white
 - `MUTED` → gray
 
-The implementation uses the native Windows `findstr /a:<colorattribute>` facility for individual output lines rather than changing the entire console screen color. This keeps PASS, warning, error, information, and instruction text visually distinct on the same screen.
+### WinRE rendering backend
+
+Pairing-6 established that `findstr /a:<colorattribute>` rendered as monochrome in the active WinRE console even though the text itself displayed correctly. RescueMeAI therefore no longer relies on `findstr /a` for the primary semantic color path.
+
+The primary renderer now emits each semantic line through a short child `cmd.exe` process using `cmd /t:<colorattribute>`. The semantic mapping remains centralized in one function; callers never embed the color code themselves.
+
+If the environment cannot render enhanced color, RescueMeAI must remain fully understandable in monochrome. Color is supplemental, never authoritative.
 
 Color must never be the only status signal. Text must still explicitly identify `[PASS]`, `[FAIL]`, `[WARNING]`, `[CONNECTED]`, and similar states.
 
@@ -92,6 +98,8 @@ Anything else stops RescueMeAI safely.
 
 ACCEPT TERMS OF USE:
 ```
+
+The actual interactive prompt must appear **once only**. Do not render a separate duplicate prompt label immediately before `set /p` or another input primitive.
 
 The general Terms `ACCEPT` phrase never authorizes a destructive recovery action.
 
@@ -136,4 +144,4 @@ Every screen that can lead to a write action must show the current safety class.
 
 The WinRE UI remains pure Windows batch where practical. It does not depend on PowerShell, JScript, ANSI/VT escape processing, or external UI frameworks.
 
-The shared renderer uses Windows-native command facilities already expected in the RescueMeAI recovery environment. If enhanced coloring cannot be rendered, text remains readable and status labels remain authoritative.
+The shared renderer uses Windows-native `cmd.exe` and console facilities already expected in the RescueMeAI recovery environment. If enhanced coloring cannot be rendered, text remains readable and status labels remain authoritative.
