@@ -2,8 +2,8 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem Active repair command. wr.cmd always downloads a fresh copy of this file.
-set "COMMAND_VERSION=WR-2026.08.14-0045-ET"
-set "BUILD_TIME=2026-08-14 00:45 ET"
+set "COMMAND_VERSION=WR-2026.08.14-0050-ET"
+set "BUILD_TIME=2026-08-14 00:50 ET"
 set "OS=C:"
 set "WORK=C:\WinRERepair"
 set "PKG=%WORK%\intel167"
@@ -141,25 +141,42 @@ if errorlevel 1 (
   goto :FAIL
 )
 
+rem FINDSTR defaults to regex mode. Hardware IDs contain backslashes, so use
+rem /L for a literal exact-text check. Require both the exact AHCI hardware ID
+rem and the expected Microsoft Catalog driver version in the same INF.
 set "MATCHINF="
-for /r "%PKG%" %%F in (*.inf) do %FINDSTR% /i /c:"PCI\VEN_8086&DEV_A102&CC_0106" "%%F" >nul 2>&1 && set "MATCHINF=%%F"
+for /r "%PKG%" %%F in (*.inf) do (
+  %FINDSTR% /l /i /c:"PCI\VEN_8086&DEV_A102&CC_0106" "%%F" >nul 2>&1
+  if not errorlevel 1 (
+    %FINDSTR% /l /i /c:"16.7.1.1012" "%%F" >nul 2>&1
+    if not errorlevel 1 if not defined MATCHINF set "MATCHINF=%%F"
+  )
+)
 if not defined MATCHINF (
+  call :LOG "No INF contained both the exact DEV_A102 AHCI ID and expected driver version"
+  for /r "%PKG%" %%F in (*.inf) do (
+    call :LOG "INF candidate: %%F"
+    %FINDSTR% /l /i /c:"DEV_A102" "%%F" >>"%LOG%" 2>&1
+    %FINDSTR% /l /i /c:"DriverVer" "%%F" >>"%LOG%" 2>&1
+  )
   set "FAILCODE=41"
-  set "FAILMSG=Downloaded package does not support DEV_A102. Installation refused."
+  set "FAILMSG=Downloaded package validation failed for DEV_A102 or driver version. Installation refused."
   goto :FAIL
 )
 call :LOG "Verified matching INF: !MATCHINF!"
+%FINDSTR% /l /i /c:"PCI\VEN_8086&DEV_A102&CC_0106" "!MATCHINF!" >>"%LOG%" 2>&1
+%FINDSTR% /l /i /c:"DriverVer" "!MATCHINF!" >>"%LOG%" 2>&1
 
-call :LOG "Adding signed Intel driver package to offline Windows"
-%DISM% /Image:%OS%\ /Add-Driver /Driver:"%PKG%" /Recurse /LogPath:"%WORK%\dism-add-driver.log" >>"%LOG%" 2>&1
+call :LOG "Adding verified signed Intel driver INF to offline Windows"
+%DISM% /Image:%OS%\ /Add-Driver /Driver:"!MATCHINF!" /LogPath:"%WORK%\dism-add-driver.log" >>"%LOG%" 2>&1
 if errorlevel 1 (
   set "FAILCODE=50"
-  set "FAILMSG=DISM could not add the Intel storage driver."
+  set "FAILMSG=DISM could not add the verified Intel storage driver."
   goto :FAIL
 )
 %DISM% /Image:%OS%\ /Get-Drivers /All /Format:Table /LogPath:"%WORK%\dism-driver-inventory.log" >>"%LOG%" 2>&1
 
-call :LOG "SUCCESS - signed Intel storage driver package added"
+call :LOG "SUCCESS - verified signed Intel storage driver package added"
 call :COPYLOGS
 echo.
 echo ================================================================
