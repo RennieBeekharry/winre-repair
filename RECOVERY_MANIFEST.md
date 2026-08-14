@@ -1,6 +1,6 @@
 # Windows Recovery Manifest
 
-Last updated: 2026-08-14 09:14 ET
+Last updated: 2026-08-14 09:18 ET
 
 ## Current failure
 
@@ -33,7 +33,8 @@ Last updated: 2026-08-14 09:14 ET
 | PASS | USB identity verification | USB positively identified separately from Windows disk | Completed |
 | PASS | USB media layout/format | `WIN11MEDIA` FAT32 boot partition + `REPAIRDATA` NTFS data partition created successfully; Windows disk not targeted | COMPLETE; no further disk formatting/cleaning code allowed in active workflow |
 | FAIL | UUP website `get.php?...&aria2=2` manifest retrieval | Interactive website endpoint did not return the assumed aria2 manifest | Do not repeat; wrong automation endpoint |
-| FAIL | GitHub-API helper acquisition in build 0907 | Recovery downloader helper could not be obtained in WinRE; no disk/filesystem operation occurred | Do not repeat unchanged; remove GitHub-API dependency for helper retrieval |
+| FAIL | GitHub-API helper acquisition in build 0907 | Recovery downloader helper could not be obtained in WinRE; no disk/filesystem operation occurred | Do not repeat unchanged |
+| FAIL | Raw/local helper acquisition in build 0915 | Static helper still could not be validated after local reuse/raw fallback; no disk/filesystem operation occurred | Do not repeat unchanged |
 
 ## Current recovery USB state
 
@@ -43,9 +44,9 @@ Last updated: 2026-08-14 09:14 ET
 
 ## Next planned actions
 
-1. Use the official UUP dump JSON API at `api.uupdump.net/get.php` for Windows 11 24H2 build 26100.8894, x64, Home/Core, en-US.
-2. Remove the separate GitHub-API helper dependency: reuse a validated local helper if present; otherwise fetch the static helper through the raw GitHub content endpoint with DNS/IP fallback and cache-busting.
-3. Validate API response build = 26100.8894 and architecture = amd64 before downloading any source file.
+1. Reconstruct the UUP downloader locally from data embedded directly inside `next.cmd`; no separate helper-file network request.
+2. Use the official UUP dump JSON API at `api.uupdump.net/get.php` for Windows 11 24H2 build 26100.8894, x64, Home/Core, en-US.
+3. Validate API response build = 26100.8894, architecture = amd64, and presence of a file list before downloading any source file.
 4. Download UUP files only to `REPAIRDATA` and verify each file against the API-provided SHA-1.
 5. Make downloads resumable/restartable; already-verified files must be reused on later runs.
 6. Convert the verified UUP set into usable Windows setup/recovery source files using Windows-compatible conversion tooling.
@@ -59,7 +60,7 @@ Last updated: 2026-08-14 09:14 ET
 - Do not repeat the failed `iaStorA -> iaStorAC` binding test unchanged.
 - Do not repeat prior ReadyBoost/storage-service/filter experiments unchanged.
 - Do not use the UUP website aria2 endpoint as an automated manifest API.
-- Do not rely on the GitHub Contents API as the only way to obtain the UUP downloader helper from WinRE.
+- Do not retry separate GitHub helper acquisition as part of the download stage; the helper is embedded locally now.
 - Do not run disk clean, format, repartition, or filesystem-creation commands in the active recovery workflow.
 - Do not erase or reinstall Windows as part of the current targeted recovery phase.
 - Do not use unsigned storage drivers or `/ForceUnsigned`.
