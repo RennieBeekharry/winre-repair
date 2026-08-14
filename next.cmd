@@ -8,14 +8,14 @@ rem WR_TARGET=Recovery tooling under C:\WinRERepair only; no Windows boot files 
 rem WR_CONSEQUENCE=Updates recovery tooling, records Terms acceptance, and establishes a repository-scoped outbound GitHub App credential.
 rem WR_ROLLBACK=Tooling and local authorization files can be removed later; no operating-system recovery changes are performed.
 
-set "COMMAND_VERSION=RMAI-2026.08.14-SECURE-PAIRING-2"
+set "COMMAND_VERSION=RMAI-2026.08.14-SECURE-PAIRING-3"
 set "PRODUCT=RescueMeAI"
 set "WORK=C:\WinRERepair"
 set "RUNTIME=%WORK%\runtime"
+set "LEGAL=%WORK%\legal"
 set "CONFIG=%WORK%\agent.cfg"
 set "DETAILS=%WORK%\RUN_DETAILS.txt"
 set "REPORT=%WORK%\LAST_RUN_REPORT.txt"
-set "SYNCDETAILS=%WORK%\RUNTIME_SYNC_DETAILS.txt"
 set "GITHUBRESULT=%WORK%\GITHUB_RESULT.txt"
 set "CURL=C:\Windows\System32\curl.exe"
 set "FINDSTR=C:\Windows\System32\findstr.exe"
@@ -27,17 +27,15 @@ set "APIHOST=api.github.com"
 set "WEBHOST=github.com"
 set "SOURCE_REPO=RennieBeekharry/winre-repair"
 set "SOURCE_REF=d24a5c20574cdce2f6d7ea28a08ebf67a4a5285f"
-set "RESOLVER=%RUNTIME%\resolve.cmd"
-set "BOOTSTRAP=%RUNTIME%\runtime-sync.cmd"
-set "AUTH=%RUNTIME%\github-auth.cmd"
 set "ACCEPTANCE=%RUNTIME%\acceptance.cmd"
-set "RESOLVER_URL=https://%APIHOST%/repos/%SOURCE_REPO%/contents/lib/resolve.cmd?ref=%SOURCE_REF%"
-set "BOOTSTRAP_URL=https://%APIHOST%/repos/%SOURCE_REPO%/contents/lib/runtime-sync.cmd?ref=%SOURCE_REF%"
+set "AUTH=%RUNTIME%\github-auth.cmd"
 
-rem The persistent launcher just resolved/fetched next.cmd successfully.
-rem Preserve that fresh API address as the first candidate before this
-rem child batch establishes its own local variables.
+rem C:\wr.cmd has already downloaded this exact file from api.github.com.
+rem Preserve the launcher-resolved API address if it used one. We do NOT
+rem re-resolve or re-validate api.github.com in this child process.
 set "LAUNCHER_APIIP=%APIIP%"
+set "APIIP=%LAUNCHER_APIIP%"
+set "WEBIP="
 
 set "STAGE=START"
 set "COMPONENT=next.cmd"
@@ -45,14 +43,9 @@ set "FAIL_RC=90"
 set "COMPONENT_RC=NOT_RUN"
 set "FAIL_REASON=RescueMeAI secure pairing bootstrap did not complete."
 set "NETWORK_STATE=UNKNOWN"
-set "APIIP="
-set "WEBIP="
-set "API_HTTPS=NOT_TESTED"
+set "API_HTTPS=PROVEN_BY_LAUNCHER"
 set "WEB_HTTPS=NOT_TESTED"
-set "RUNTIME_SYNC=NOT_STARTED"
-set "RUNTIME_ITEM=None"
-set "RUNTIME_ITEM_STAGE=None"
-set "RUNTIME_ITEM_RC=NOT_RUN"
+set "MODULE_STAGE=NOT_STARTED"
 set "TERMS_STATUS=NOT_REACHED"
 set "TERMS_RC=NOT_RUN"
 set "GITHUB_AUTHORIZATION=NOT_REACHED"
@@ -65,6 +58,7 @@ set "REPORTVOL="
 
 if not exist "%WORK%" md "%WORK%" >nul 2>&1
 if not exist "%RUNTIME%" md "%RUNTIME%" >nul 2>&1
+if not exist "%LEGAL%" md "%LEGAL%" >nul 2>&1
 call :WRITE_REPORT RUNNING 0 "RescueMeAI secure GitHub App pairing bootstrap started."
 call :WRITE_DETAILS
 
@@ -86,6 +80,9 @@ echo   GitHub App ID        : 4595411
 echo   Private repository   : RennieBeekharry/winre-repair-logs
 echo   Repository ID        : 1333818657
 echo   Classic OAuth scopes : NONE
+echo.
+echo api.github.com status:
+echo   PROVEN - the launcher fetched this build from it successfully.
 echo ================================================================
 
 set "STAGE=PRECHECK"
@@ -119,99 +116,45 @@ if exist "%PING%" (
 )
 call :WRITE_DETAILS
 
-set "STAGE=RESOLVE_API_GITHUB"
-set "COMPONENT=api.github.com"
-call :RESOLVE_HOST "%APIHOST%" APIIP "%LAUNCHER_APIIP%"
-if errorlevel 1 (
-  set "API_HTTPS=FAIL"
-  set "COMPONENT_RC=92"
-  set "FAIL_RC=92"
-  set "FAIL_REASON=Could not obtain an HTTPS-validated address for api.github.com."
-  goto :FAIL
-)
-set "API_HTTPS=PASS"
->"%WORK%\github-api-ip.txt" echo(!APIIP!
+rem Fetch only the modules and legal documents needed for pairing. Unlike the
+rem old runtime-sync path, this does not perform a second API resolver pass.
+set "STAGE=STAGE_PAIRING_FILES"
+set "COMPONENT=lib/acceptance.cmd"
+set "MODULE_STAGE=DOWNLOAD_ACCEPTANCE"
+call :FETCH_API "lib/acceptance.cmd" "%ACCEPTANCE%" "WR-MODULE: acceptance"
+if errorlevel 1 goto :FAIL
 
-set "STAGE=RESOLVE_GITHUB_WEB"
-set "COMPONENT=github.com"
-call :RESOLVE_HOST "%WEBHOST%" WEBIP ""
-if errorlevel 1 (
-  set "WEB_HTTPS=FAIL"
-  set "COMPONENT_RC=92"
-  set "FAIL_RC=92"
-  set "FAIL_REASON=Could not obtain an HTTPS-validated address for github.com."
-  goto :FAIL
-)
-set "WEB_HTTPS=PASS"
->"%WORK%\github-web-ip.txt" echo(!WEBIP!
+set "COMPONENT=lib/github-auth.cmd"
+set "MODULE_STAGE=DOWNLOAD_AUTH"
+call :FETCH_API "lib/github-auth.cmd" "%AUTH%" "WR-MODULE: github-auth"
+if errorlevel 1 goto :FAIL
+
+set "COMPONENT=TERMS_OF_USE.md"
+set "MODULE_STAGE=DOWNLOAD_TERMS"
+call :FETCH_API "TERMS_OF_USE.md" "%LEGAL%\TERMS_OF_USE.md" "RescueMeAI"
+if errorlevel 1 goto :FAIL
+
+set "COMPONENT=PRIVACY_POLICY.md"
+set "MODULE_STAGE=DOWNLOAD_PRIVACY"
+call :FETCH_API "PRIVACY_POLICY.md" "%LEGAL%\PRIVACY_POLICY.md" "RescueMeAI"
+if errorlevel 1 goto :FAIL
+
+set "COMPONENT=DISCLAIMER_AND_RISK_NOTICE.md"
+set "MODULE_STAGE=DOWNLOAD_DISCLAIMER"
+call :FETCH_API "DISCLAIMER_AND_RISK_NOTICE.md" "%LEGAL%\DISCLAIMER_AND_RISK_NOTICE.md" "RescueMeAI"
+if errorlevel 1 goto :FAIL
+
+set "COMPONENT=LICENSE.md"
+set "MODULE_STAGE=DOWNLOAD_LICENSE"
+call :FETCH_API "LICENSE.md" "%LEGAL%\LICENSE.md" "RescueMeAI"
+if errorlevel 1 goto :FAIL
+
+set "COMPONENT=TRADEMARKS.md"
+set "MODULE_STAGE=DOWNLOAD_TRADEMARKS"
+call :FETCH_API "TRADEMARKS.md" "%LEGAL%\TRADEMARKS.md" "RescueMeAI"
+if errorlevel 1 goto :FAIL
+set "MODULE_STAGE=PAIRING_FILES_READY"
 call :WRITE_DETAILS
-
-set "STAGE=FETCH_RESOLVER"
-set "COMPONENT=lib/resolve.cmd"
-call :FETCH "%RESOLVER_URL%" "%RESOLVER%.tmp"
-set "FETCHRC=!errorlevel!"
-if not "!FETCHRC!"=="0" (
-  set "COMPONENT_RC=!FETCHRC!"
-  set "FAIL_RC=90"
-  set "FAIL_REASON=Could not download the pinned RescueMeAI resolver."
-  goto :FAIL
-)
-"%FINDSTR%" /i /c:"WR-MODULE: resolve" "%RESOLVER%.tmp" >nul 2>&1
-if errorlevel 1 (
-  set "COMPONENT_RC=96"
-  set "FAIL_RC=96"
-  set "FAIL_REASON=Downloaded resolver failed module validation."
-  goto :FAIL
-)
-move /y "%RESOLVER%.tmp" "%RESOLVER%" >nul 2>&1
-if errorlevel 1 (
-  set "COMPONENT_RC=97"
-  set "FAIL_RC=97"
-  set "FAIL_REASON=Validated resolver could not be staged."
-  goto :FAIL
-)
-
-set "STAGE=FETCH_RUNTIME_SYNC"
-set "COMPONENT=lib/runtime-sync.cmd"
-call :FETCH "%BOOTSTRAP_URL%" "%BOOTSTRAP%.tmp"
-set "FETCHRC=!errorlevel!"
-if not "!FETCHRC!"=="0" (
-  set "COMPONENT_RC=!FETCHRC!"
-  set "FAIL_RC=90"
-  set "FAIL_REASON=Could not download the pinned RescueMeAI runtime synchronizer."
-  goto :FAIL
-)
-"%FINDSTR%" /i /c:"WR-MODULE: runtime-sync" "%BOOTSTRAP%.tmp" >nul 2>&1
-if errorlevel 1 (
-  set "COMPONENT_RC=96"
-  set "FAIL_RC=96"
-  set "FAIL_REASON=Downloaded runtime synchronizer failed module validation."
-  goto :FAIL
-)
-move /y "%BOOTSTRAP%.tmp" "%BOOTSTRAP%" >nul 2>&1
-if errorlevel 1 (
-  set "COMPONENT_RC=97"
-  set "FAIL_RC=97"
-  set "FAIL_REASON=Validated runtime synchronizer could not be staged."
-  goto :FAIL
-)
-
-set "STAGE=RUNTIME_SYNC"
-set "COMPONENT=lib/runtime-sync.cmd"
-set "RUNTIME_SYNC=RUNNING"
-call :WRITE_DETAILS
-call "%BOOTSTRAP%" pairing "%SOURCE_REPO%" "%SOURCE_REF%"
-set "RUNTIME_SYNC_RC=!errorlevel!"
-if not "!RUNTIME_SYNC_RC!"=="0" (
-  set "RUNTIME_SYNC=FAIL"
-  call :READ_SYNC_DETAILS
-  set "COMPONENT=!RUNTIME_ITEM!"
-  set "COMPONENT_RC=!RUNTIME_ITEM_RC!"
-  set "FAIL_RC=!RUNTIME_SYNC_RC!"
-  set "FAIL_REASON=Runtime synchronization failed at !RUNTIME_ITEM! / !RUNTIME_ITEM_STAGE!."
-  goto :FAIL
-)
-set "RUNTIME_SYNC=PASS"
 
 set "STAGE=TERMS_ACCEPTANCE"
 set "COMPONENT=lib/acceptance.cmd"
@@ -234,6 +177,41 @@ if not "!TERMS_RC!"=="0" (
   goto :FAIL
 )
 set "TERMS_STATUS=ACCEPTED"
+call :WRITE_DETAILS
+
+rem github.com is a different endpoint used only for the device-flow pages.
+rem Resolve it now, after the proven API path and local Terms are ready.
+set "STAGE=RESOLVE_GITHUB_DEVICE_ENDPOINT"
+set "COMPONENT=github.com"
+call :RESOLVE_WEB
+if errorlevel 1 (
+  set "WEB_HTTPS=FAIL"
+  set "COMPONENT_RC=92"
+  set "FAIL_RC=92"
+  set "FAIL_REASON=Could not obtain an HTTPS-validated address for the GitHub device-authorization endpoint."
+  goto :FAIL
+)
+set "WEB_HTTPS=PASS"
+>"%WORK%\github-web-ip.txt" echo(!WEBIP!
+
+rem github-auth.cmd also uses api.github.com for the private evidence upload.
+rem If the launcher provided its proven API address, preserve it. Otherwise,
+rem obtain an address without adding a redundant HTTPS gate; API fetches above
+rem have already proven the hostname works in this exact run.
+if defined APIIP (
+  >"%WORK%\github-api-ip.txt" echo(!APIIP!
+) else (
+  call :LOOKUP_ONLY "%APIHOST%" APIIP
+  if defined APIIP >"%WORK%\github-api-ip.txt" echo(!APIIP!
+)
+if not defined APIIP (
+  set "COMPONENT=api.github.com address handoff"
+  set "COMPONENT_RC=92"
+  set "FAIL_RC=92"
+  set "FAIL_REASON=The launcher proved GitHub API access, but no address could be handed to the authentication module."
+  goto :FAIL
+)
+call :WRITE_DETAILS
 
 set "STAGE=WRITE_CONFIG"
 set "COMPONENT=agent.cfg"
@@ -303,7 +281,7 @@ echo Version             : %COMMAND_VERSION%
 echo Terms               : !TERMS_STATUS!
 echo api.github.com HTTPS: !API_HTTPS!
 echo github.com HTTPS    : !WEB_HTTPS!
-echo Runtime sync        : !RUNTIME_SYNC!
+echo Pairing files       : !MODULE_STAGE!
 echo GitHub App auth     : !GITHUB_AUTHORIZATION!
 echo Private report      : !PRIVATE_REPORT_UPLOAD!
 echo.
@@ -339,8 +317,7 @@ echo Component RC   : !COMPONENT_RC!
 echo Network        : !NETWORK_STATE!
 echo API HTTPS      : !API_HTTPS!
 echo GitHub HTTPS   : !WEB_HTTPS!
-echo Runtime sync   : !RUNTIME_SYNC!
-echo Runtime item   : !RUNTIME_ITEM! / !RUNTIME_ITEM_STAGE! / !RUNTIME_ITEM_RC!
+echo Pairing files  : !MODULE_STAGE!
 echo Terms          : !TERMS_STATUS! rc=!TERMS_RC!
 echo GitHub App auth: !GITHUB_AUTHORIZATION! rc=!GITHUB_AUTH_RC!
 echo Auth HTTP      : !GITHUB_AUTH_HTTP!
@@ -366,11 +343,13 @@ color 0E >nul 2>&1
 echo ================================================================
 echo [WARNING] RESCUEMEAI DID NOT START
 echo ================================================================
-echo RescueMeAI Terms were not accepted.
-echo No recovery or authorization action was performed.
+echo Version : %COMMAND_VERSION%
+echo Result  : RescueMeAI Terms were not accepted.
 echo.
 echo WHAT YOU SHOULD DO:
 echo   Reply to ChatGPT with exactly: warning
+echo.
+echo Nothing destructive was attempted.
 echo ================================================================
 pause >nul
 exit /b 40
@@ -383,73 +362,118 @@ set "FAIL_RC=91"
 set "FAIL_REASON=Required %~2 was not found."
 exit /b 1
 
-:FETCH
-set "FETCH_URL=%~1"
-set "FETCH_OUT=%~2"
-if exist "%FETCH_OUT%" del /f /q "%FETCH_OUT%" >nul 2>&1
-"%CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --resolve "%APIHOST%:443:%APIIP%" -H "Accept: application/vnd.github.raw+json" -H "Cache-Control: no-cache, no-store, max-age=0" "%FETCH_URL%" -o "%FETCH_OUT%"
-set "FRC=!errorlevel!"
-if not "!FRC!"=="0" exit /b !FRC!
-if not exist "%FETCH_OUT%" exit /b 90
-for %%Z in ("%FETCH_OUT%") do if %%~zZ LSS 32 exit /b 90
+:FETCH_API
+set "FA_PATH=%~1"
+set "FA_DEST=%~2"
+set "FA_MARK=%~3"
+set "FA_TMP=%FA_DEST%.tmp"
+set "FA_URL=https://%APIHOST%/repos/%SOURCE_REPO%/contents/%FA_PATH%?ref=%SOURCE_REF%"
+if exist "%FA_TMP%" del /f /q "%FA_TMP%" >nul 2>&1
+
+rem First mirror exactly how the parent launcher succeeded: use its API IP if
+rem available; otherwise use normal DNS. If the IP-pinned attempt fails, retry
+rem once using normal DNS instead of turning DNS into a separate hard gate.
+set "FA_RC=1"
+if defined APIIP (
+  "%CURL%" --ssl-no-revoke --fail --silent --show-error --connect-timeout 15 --max-time 120 --resolve "%APIHOST%:443:%APIIP%" -H "Accept: application/vnd.github.raw+json" -H "Cache-Control: no-cache, no-store, max-age=0" "%FA_URL%" -o "%FA_TMP%"
+  set "FA_RC=!errorlevel!"
+)
+if not "!FA_RC!"=="0" (
+  if exist "%FA_TMP%" del /f /q "%FA_TMP%" >nul 2>&1
+  "%CURL%" --ssl-no-revoke --fail --silent --show-error --connect-timeout 15 --max-time 120 -H "Accept: application/vnd.github.raw+json" -H "Cache-Control: no-cache, no-store, max-age=0" "%FA_URL%" -o "%FA_TMP%"
+  set "FA_RC=!errorlevel!"
+)
+if not "!FA_RC!"=="0" (
+  set "COMPONENT_RC=!FA_RC!"
+  set "FAIL_RC=90"
+  set "FAIL_REASON=Could not download !FA_PATH! through the API path already proven by the launcher."
+  exit /b 1
+)
+if not exist "%FA_TMP%" (
+  set "COMPONENT_RC=90"
+  set "FAIL_RC=90"
+  set "FAIL_REASON=Download reported success but !FA_PATH! was not created."
+  exit /b 1
+)
+for %%Z in ("%FA_TMP%") do if %%~zZ LSS 32 (
+  set "COMPONENT_RC=96"
+  set "FAIL_RC=96"
+  set "FAIL_REASON=Downloaded !FA_PATH! was unexpectedly small."
+  exit /b 1
+)
+"%FINDSTR%" /i /c:"%FA_MARK%" "%FA_TMP%" >nul 2>&1
+if errorlevel 1 (
+  set "COMPONENT_RC=96"
+  set "FAIL_RC=96"
+  set "FAIL_REASON=Downloaded !FA_PATH! failed content validation."
+  exit /b 1
+)
+move /y "%FA_TMP%" "%FA_DEST%" >nul 2>&1
+if errorlevel 1 (
+  set "COMPONENT_RC=97"
+  set "FAIL_RC=97"
+  set "FAIL_REASON=Validated !FA_PATH! could not be staged locally."
+  exit /b 1
+)
 exit /b 0
 
-:RESOLVE_HOST
-set "RH_HOST=%~1"
-set "RH_RET=%~2"
-set "RH_SEED=%~3"
-set "RH_FOUND="
-set "RH_CAND="
-set "RH_CACHE="
-if defined RH_SEED (
-  set "RH_CAND=%RH_SEED%"
-  call :TEST_HOST
-  if not errorlevel 1 set "RH_FOUND=!RH_CAND!"
-)
-if /i "%RH_HOST%"=="api.github.com" set "RH_CACHE=%WORK%\github-api-ip.txt"
-if /i "%RH_HOST%"=="github.com" set "RH_CACHE=%WORK%\github-web-ip.txt"
-if not defined RH_FOUND if defined RH_CACHE if exist "%RH_CACHE%" (
-  set "RH_CAND="
-  set /p "RH_CAND="<"%RH_CACHE%"
-  if defined RH_CAND (
-    call :TEST_HOST
-    if not errorlevel 1 set "RH_FOUND=!RH_CAND!"
+:RESOLVE_WEB
+set "WEBIP="
+rem Try a previously validated address first.
+if exist "%WORK%\github-web-ip.txt" (
+  set "WEB_CAND="
+  set /p "WEB_CAND="<"%WORK%\github-web-ip.txt"
+  if defined WEB_CAND (
+    call :TEST_WEB "!WEB_CAND!"
+    if not errorlevel 1 (
+      set "WEBIP=!WEB_CAND!"
+      exit /b 0
+    )
   )
 )
 for %%D in (64.71.255.204 1.1.1.1 8.8.8.8 9.9.9.9) do (
-  if not defined RH_FOUND call :LOOKUP_HOST "%%D"
+  if not defined WEBIP call :LOOKUP_WEB "%%D"
 )
-if not defined RH_FOUND exit /b 92
-set "%RH_RET%=%RH_FOUND%"
+if defined WEBIP exit /b 0
+exit /b 92
+
+:LOOKUP_WEB
+set "WEB_DNS=%~1"
+set "WEB_CAND="
+set "WEB_TOK="
+for /f "delims=" %%L in ('"%NSLOOKUP%" %WEBHOST% %WEB_DNS% 2^>nul ^| "%FINDSTR%" /R "[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*"') do (
+  set "WEB_TOK="
+  for %%T in (%%L) do set "WEB_TOK=%%T"
+  if defined WEB_TOK if /i not "!WEB_TOK!"=="%WEB_DNS%" set "WEB_CAND=!WEB_TOK!"
+)
+if defined WEB_CAND (
+  call :TEST_WEB "!WEB_CAND!"
+  if not errorlevel 1 set "WEBIP=!WEB_CAND!"
+)
 exit /b 0
 
-:LOOKUP_HOST
-set "RH_DNS=%~1"
-set "RH_CAND="
-set "RH_TOK="
-for /f "delims=" %%L in ('"%NSLOOKUP%" %RH_HOST% %RH_DNS% 2^>nul ^| "%FINDSTR%" /R "[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*"') do (
-  set "RH_TOK="
-  for %%T in (%%L) do set "RH_TOK=%%T"
-  if defined RH_TOK if /i not "!RH_TOK!"=="%RH_DNS%" set "RH_CAND=!RH_TOK!"
-)
-if defined RH_CAND (
-  call :TEST_HOST
-  if not errorlevel 1 set "RH_FOUND=!RH_CAND!"
-)
-exit /b 0
-
-:TEST_HOST
-if not defined RH_CAND exit /b 92
-"%CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 8 --max-time 20 --resolve "%RH_HOST%:443:%RH_CAND%" "https://%RH_HOST%/" -o NUL >nul 2>&1
+:TEST_WEB
+set "TW_IP=%~1"
+"%CURL%" --ssl-no-revoke --fail --silent --show-error --connect-timeout 10 --max-time 30 --resolve "%WEBHOST%:443:%TW_IP%" "https://%WEBHOST%/login/device" -o NUL >nul 2>&1
 exit /b !errorlevel!
 
-:READ_SYNC_DETAILS
-if not exist "%SYNCDETAILS%" exit /b 0
-for /f "usebackq tokens=1,* delims==" %%A in ("%SYNCDETAILS%") do (
-  if /i "%%A"=="component" set "RUNTIME_ITEM=%%B"
-  if /i "%%A"=="component_stage" set "RUNTIME_ITEM_STAGE=%%B"
-  if /i "%%A"=="component_return_code" set "RUNTIME_ITEM_RC=%%B"
+:LOOKUP_ONLY
+set "LO_HOST=%~1"
+set "LO_RET=%~2"
+set "LO_RESULT="
+for %%D in (64.71.255.204 1.1.1.1 8.8.8.8 9.9.9.9) do (
+  if not defined LO_RESULT (
+    set "LO_CAND="
+    set "LO_TOK="
+    for /f "delims=" %%L in ('"%NSLOOKUP%" %LO_HOST% %%D 2^>nul ^| "%FINDSTR%" /R "[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*"') do (
+      set "LO_TOK="
+      for %%T in (%%L) do set "LO_TOK=%%T"
+      if defined LO_TOK if /i not "!LO_TOK!"=="%%D" set "LO_CAND=!LO_TOK!"
+    )
+    if defined LO_CAND set "LO_RESULT=!LO_CAND!"
+  )
 )
+set "%LO_RET%=%LO_RESULT%"
 exit /b 0
 
 :READ_GITHUB_RESULT
@@ -473,20 +497,14 @@ exit /b 0
 >>"%DETAILS%" echo component=!COMPONENT!
 >>"%DETAILS%" echo component_return_code=!COMPONENT_RC!
 >>"%DETAILS%" echo network_state=!NETWORK_STATE!
+>>"%DETAILS%" echo api_https=!API_HTTPS!
 >>"%DETAILS%" echo launcher_api_ip=!LAUNCHER_APIIP!
->>"%DETAILS%" echo api_github_ip=!APIIP!
->>"%DETAILS%" echo api_github_https=!API_HTTPS!
->>"%DETAILS%" echo github_web_ip=!WEBIP!
+>>"%DETAILS%" echo api_ip_handoff=!APIIP!
 >>"%DETAILS%" echo github_web_https=!WEB_HTTPS!
->>"%DETAILS%" echo runtime_sync=!RUNTIME_SYNC!
->>"%DETAILS%" echo runtime_item=!RUNTIME_ITEM!
->>"%DETAILS%" echo runtime_item_stage=!RUNTIME_ITEM_STAGE!
->>"%DETAILS%" echo runtime_item_rc=!RUNTIME_ITEM_RC!
+>>"%DETAILS%" echo github_web_ip=!WEBIP!
+>>"%DETAILS%" echo pairing_file_stage=!MODULE_STAGE!
 >>"%DETAILS%" echo terms_status=!TERMS_STATUS!
 >>"%DETAILS%" echo terms_rc=!TERMS_RC!
->>"%DETAILS%" echo github_app_id=4595411
->>"%DETAILS%" echo github_app_client_id=Iv23lif9UoXW4QvUh8tJ
->>"%DETAILS%" echo github_repository_id=1333818657
 >>"%DETAILS%" echo github_authorization=!GITHUB_AUTHORIZATION!
 >>"%DETAILS%" echo github_auth_rc=!GITHUB_AUTH_RC!
 >>"%DETAILS%" echo github_auth_http=!GITHUB_AUTH_HTTP!
@@ -523,8 +541,8 @@ if not defined REPORTVOL exit /b 40
 if not exist "!REPORTVOL!\RescueMeAI" md "!REPORTVOL!\RescueMeAI" >nul 2>&1
 copy /y "%REPORT%" "!REPORTVOL!\RescueMeAI\LAST_RUN_REPORT.txt" >nul 2>&1
 copy /y "%DETAILS%" "!REPORTVOL!\RescueMeAI\RUN_DETAILS.txt" >nul 2>&1
-if exist "%WORK%\legal" (
+if exist "%LEGAL%" (
   if not exist "!REPORTVOL!\RescueMeAI\legal" md "!REPORTVOL!\RescueMeAI\legal" >nul 2>&1
-  copy /y "%WORK%\legal\*.md" "!REPORTVOL!\RescueMeAI\legal\" >nul 2>&1
+  copy /y "%LEGAL%\*.md" "!REPORTVOL!\RescueMeAI\legal\" >nul 2>&1
 )
 exit /b 0
