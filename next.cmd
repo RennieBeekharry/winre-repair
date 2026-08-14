@@ -1,156 +1,128 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-set "COMMAND_VERSION=WR-2026.08.14-0258-ET"
-set "BUILD_TIME=2026-08-14 02:58 ET"
-set "OS=C:"
+set "COMMAND_VERSION=WR-2026.08.14-0325-ET"
+set "BUILD_TIME=2026-08-14 03:25 ET"
 set "WORK=C:\WinRERepair"
-set "REG=X:\Windows\System32\reg.exe"
-set "FINDSTR=C:\Windows\System32\findstr.exe"
-set "CHKDSK=X:\Windows\System32\chkdsk.exe"
-set "FSUTIL=X:\Windows\System32\fsutil.exe"
 set "DISKPART=X:\Windows\System32\diskpart.exe"
-set "WMIC=X:\Windows\System32\wbem\wmic.exe"
-if not exist "%WMIC%" set "WMIC=C:\Windows\System32\wbem\wmic.exe"
-set "POWERSHELL=X:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
-if not exist "%POWERSHELL%" set "POWERSHELL=C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
-set "DEVICEKEY=HKLM\WR_SYS\ControlSet001\Enum\PCI\VEN_8086&DEV_A102&SUBSYS_2B45103C&REV_31\3&11583659&0&B8"
-set "CHK=%WORK%\chkdsk-readonly-0258.txt"
-set "SMART=%WORK%\smart-status-0258.txt"
-set "PHYS=%WORK%\physicaldisk-status-0258.txt"
-set "DPIN=%WORK%\diskpart-health-0258.txt"
-set "DPOUT=%WORK%\diskpart-health-out-0258.txt"
-set "DIRTYOUT=%WORK%\dirty-bit-0258.txt"
-set "BINDING=UNKNOWN"
-set "DISKONLINE=UNKNOWN"
-set "DIRTYSTATE=UNKNOWN"
-set "CHKSTATE=INCONCLUSIVE"
-set "SMARTSTATE=UNAVAILABLE"
-set "PHYSSTATE=UNAVAILABLE"
-set "KERNELREAD=FAIL"
-set "DISKSYSREAD=FAIL"
-set "HIVEREAD=FAIL"
-set "ASSESS=INCONCLUSIVE"
+set "FINDSTR=C:\Windows\System32\findstr.exe"
+set "TARGET_LABEL=WINREPAIR"
+set "VOLCMD=%WORK%\usb-target-volume.txt"
+set "VOLOUT=%WORK%\usb-target-volume-out.txt"
+set "OSCMD=%WORK%\os-volume.txt"
+set "OSOUT=%WORK%\os-volume-out.txt"
+set "DISKCMD=%WORK%\usb-target-disk.txt"
+set "DISKOUT=%WORK%\usb-target-disk-out.txt"
+set "LISTCMD=%WORK%\disk-list.txt"
+set "LISTOUT=%WORK%\disk-list-out.txt"
+set "FINGERPRINT=%WORK%\usb-media-target-fingerprint.txt"
+set "USBLETTER="
+set "USBDISK="
+set "OSDISK="
+set "USBID=UNKNOWN"
+set "USBTYPE=UNKNOWN"
+set "MATCHCOUNT=0"
+set "SAFE=NO"
 
 cls
 echo ================================================================
-echo WINRE-REPAIR - CORRECTED DRIVE HEALTH SNAPSHOT
+echo WINRE-REPAIR - USB MEDIA TARGET IDENTIFICATION
 echo Version: %COMMAND_VERSION%
 echo Built:   %BUILD_TIME%
 echo Fetched: %date% %time%
-echo Mode:    READ-ONLY - NO DISK REPAIR
+echo Mode:    READ-ONLY - NOTHING WILL BE ERASED
 echo ================================================================
 echo.
-echo Previous snapshot could falsely mark a drive failure when certutil
- echo was unavailable. This build performs direct binary file reads.
+echo Looking for exactly one existing USB volume labelled %TARGET_LABEL%.
+echo The internal Windows disk will be identified independently and excluded.
 echo.
 
 if not exist "%WORK%" md "%WORK%" >nul 2>&1
+if not exist "%DISKPART%" goto :SUMMARY
 
-rem Confirm the failed iaStorAC test was rolled back.
-%REG% unload HKLM\WR_SYS >nul 2>&1
-%REG% load HKLM\WR_SYS "%OS%\Windows\System32\Config\SYSTEM" >nul 2>&1
-if not errorlevel 1 (
-  for /f "tokens=2,*" %%A in ('%REG% query "%DEVICEKEY%" /v Service 2^>nul ^| %FINDSTR% /i "Service"') do set "BINDING=%%B"
-  %REG% unload HKLM\WR_SYS >nul 2>&1
-)
-
-rem Force real binary reads. COPY /B must read the complete source file.
-if exist "%OS%\Windows\System32\ntoskrnl.exe" (
-  copy /b "%OS%\Windows\System32\ntoskrnl.exe" NUL >nul 2>&1
-  if not errorlevel 1 set "KERNELREAD=PASS"
-)
-if exist "%OS%\Windows\System32\drivers\disk.sys" (
-  copy /b "%OS%\Windows\System32\drivers\disk.sys" NUL >nul 2>&1
-  if not errorlevel 1 set "DISKSYSREAD=PASS"
-)
-if exist "%OS%\Windows\System32\Config\SYSTEM" (
-  copy /b "%OS%\Windows\System32\Config\SYSTEM" NUL >nul 2>&1
-  if not errorlevel 1 set "HIVEREAD=PASS"
-)
-
-rem Disk visibility.
->"%DPIN%" echo list disk
->>"%DPIN%" echo list volume
-"%DISKPART%" /s "%DPIN%" >"%DPOUT%" 2>&1
-%FINDSTR% /i /c:"Online" "%DPOUT%" >nul 2>&1
-if not errorlevel 1 set "DISKONLINE=YES"
-
-rem NTFS dirty bit.
-"%FSUTIL%" dirty query %OS% >"%DIRTYOUT%" 2>&1
-%FINDSTR% /i /c:"is NOT Dirty" "%DIRTYOUT%" >nul 2>&1
-if not errorlevel 1 set "DIRTYSTATE=CLEAN"
-if /i "%DIRTYSTATE%"=="UNKNOWN" (
-  %FINDSTR% /i /c:"is Dirty" "%DIRTYOUT%" >nul 2>&1
-  if not errorlevel 1 set "DIRTYSTATE=DIRTY"
-)
-
-rem SMART predictive status if WinRE exposes WMI. Unavailable is neutral.
-if exist "%WMIC%" (
-  "%WMIC%" /namespace:\\root\wmi path MSStorageDriver_FailurePredictStatus get PredictFailure /value >"%SMART%" 2>&1
-  %FINDSTR% /i /c:"PredictFailure=TRUE" "%SMART%" >nul 2>&1
-  if not errorlevel 1 set "SMARTSTATE=FAIL"
-  if /i "!SMARTSTATE!"=="UNAVAILABLE" (
-    %FINDSTR% /i /c:"PredictFailure=FALSE" "%SMART%" >nul 2>&1
-    if not errorlevel 1 set "SMARTSTATE=PASS"
-  )
-)
-
-rem Storage Management health if available. Unavailable is neutral.
-if exist "%POWERSHELL%" (
-  "%POWERSHELL%" -NoLogo -NoProfile -NonInteractive -Command "Get-PhysicalDisk ^| Format-List FriendlyName,OperationalStatus,HealthStatus,Size" >"%PHYS%" 2>&1
-  %FINDSTR% /i /c:"HealthStatus" "%PHYS%" >nul 2>&1
+rem Find exactly one mounted volume with the known existing WINREPAIR label.
+for %%L in (D E F G H I J K L M N O P Q R S T U V W Y Z) do (
+  vol %%L: 2>nul | "%FINDSTR%" /i /c:"%TARGET_LABEL%" >nul 2>&1
   if not errorlevel 1 (
-    %FINDSTR% /i /c:"Unhealthy" /c:"Warning" /c:"Lost Communication" "%PHYS%" >nul 2>&1
-    if errorlevel 1 (set "PHYSSTATE=HEALTHY") else (set "PHYSSTATE=WARNING")
+    set /a MATCHCOUNT+=1
+    set "USBLETTER=%%L"
   )
 )
+if not "%MATCHCOUNT%"=="1" goto :SUMMARY
 
-rem Read-only filesystem check. No /F or /R.
-echo Running read-only CHKDSK. Please wait...
-"%CHKDSK%" %OS% >"%CHK%" 2>&1
-%FINDSTR% /i /c:"found no problems" "%CHK%" >nul 2>&1
-if not errorlevel 1 set "CHKSTATE=CLEAN"
-%FINDSTR% /i /c:"found problems" /c:"errors found" "%CHK%" >nul 2>&1
-if not errorlevel 1 set "CHKSTATE=ERRORS_FOUND"
-%FINDSTR% /i /c:"0 KB in bad sectors" "%CHK%" >nul 2>&1
-if not errorlevel 1 if /i "%CHKSTATE%"=="INCONCLUSIVE" set "CHKSTATE=NO_BAD_SECTORS_REPORTED"
-if /i not "%CHKSTATE%"=="CLEAN" if /i not "%CHKSTATE%"=="ERRORS_FOUND" (
-  %FINDSTR% /i /c:"KB in bad sectors" "%CHK%" >nul 2>&1
-  if not errorlevel 1 (
-    %FINDSTR% /i /c:"0 KB in bad sectors" "%CHK%" >nul 2>&1
-    if errorlevel 1 set "CHKSTATE=BAD_SECTORS_REPORTED"
-  )
+rem Map the labelled USB volume to its physical disk number.
+>"%VOLCMD%" echo select volume %USBLETTER%
+>>"%VOLCMD%" echo detail volume
+"%DISKPART%" /s "%VOLCMD%" >"%VOLOUT%" 2>&1
+for /f "tokens=1,2,3" %%A in ('"%FINDSTR%" /R /C:"Disk [0-9]" "%VOLOUT%"') do (
+  if /i "%%A"=="Disk" set "USBDISK=%%B"
+  if /i "%%B"=="Disk" set "USBDISK=%%C"
 )
+if not defined USBDISK goto :SUMMARY
 
-rem Conservative assessment: only positive failure evidence flags the drive.
-set "ASSESS=NO_OBVIOUS_DRIVE_FAILURE"
-if /i "%DISKONLINE%"=="UNKNOWN" set "ASSESS=INCONCLUSIVE"
-if /i "%KERNELREAD%"=="FAIL" set "ASSESS=BOOT_FILE_OR_READ_PROBLEM"
-if /i "%DISKSYSREAD%"=="FAIL" set "ASSESS=BOOT_FILE_OR_READ_PROBLEM"
-if /i "%HIVEREAD%"=="FAIL" set "ASSESS=READ_PROBLEM_SUSPECTED"
-if /i "%CHKSTATE%"=="ERRORS_FOUND" set "ASSESS=FILESYSTEM_PROBLEM_FOUND"
-if /i "%CHKSTATE%"=="BAD_SECTORS_REPORTED" set "ASSESS=DRIVE_FAILURE_SUSPECTED"
-if /i "%SMARTSTATE%"=="FAIL" set "ASSESS=DRIVE_FAILURE_SUSPECTED"
-if /i "%PHYSSTATE%"=="WARNING" set "ASSESS=DRIVE_FAILURE_SUSPECTED"
+rem Independently map the offline Windows C: volume to its physical disk.
+>"%OSCMD%" echo select volume C
+>>"%OSCMD%" echo detail volume
+"%DISKPART%" /s "%OSCMD%" >"%OSOUT%" 2>&1
+for /f "tokens=1,2,3" %%A in ('"%FINDSTR%" /R /C:"Disk [0-9]" "%OSOUT%"') do (
+  if /i "%%A"=="Disk" set "OSDISK=%%B"
+  if /i "%%B"=="Disk" set "OSDISK=%%C"
+)
+if not defined OSDISK goto :SUMMARY
+if "%USBDISK%"=="%OSDISK%" goto :SUMMARY
 
+rem Inspect the candidate physical disk. It must explicitly report USB.
+>"%DISKCMD%" echo select disk %USBDISK%
+>>"%DISKCMD%" echo detail disk
+"%DISKPART%" /s "%DISKCMD%" >"%DISKOUT%" 2>&1
+"%FINDSTR%" /i /R /C:"Type.*USB" "%DISKOUT%" >nul 2>&1
+if errorlevel 1 goto :SUMMARY
+set "USBTYPE=USB"
+for /f "tokens=3" %%I in ('"%FINDSTR%" /i /c:"Disk ID:" "%DISKOUT%"') do if /i "!USBID!"=="UNKNOWN" set "USBID=%%I"
+
+rem Capture disk list lines so the user can visually verify the capacity.
+>"%LISTCMD%" echo list disk
+"%DISKPART%" /s "%LISTCMD%" >"%LISTOUT%" 2>&1
+set "SAFE=YES"
+
+rem Save the non-secret fingerprint for the destructive stage to re-check.
+>"%FINGERPRINT%" echo Version=%COMMAND_VERSION%
+>>"%FINGERPRINT%" echo ExistingLabel=%TARGET_LABEL%
+>>"%FINGERPRINT%" echo ExistingDriveLetter=%USBLETTER%:
+>>"%FINGERPRINT%" echo CandidateDisk=%USBDISK%
+>>"%FINGERPRINT%" echo CandidateDiskID=%USBID%
+>>"%FINGERPRINT%" echo CandidateType=%USBTYPE%
+>>"%FINGERPRINT%" echo WindowsDisk=%OSDISK%
+
+:SUMMARY
 cls
 echo ================================================================
-echo RECOVERY SNAPSHOT
+echo USB MEDIA TARGET SNAPSHOT
 echo Version: %COMMAND_VERSION%
 echo ================================================================
-echo Controller binding       : %BINDING%
-echo Physical disk online     : %DISKONLINE%
-echo ntoskrnl.exe binary read : %KERNELREAD%
-echo disk.sys binary read     : %DISKSYSREAD%
-echo SYSTEM hive binary read  : %HIVEREAD%
-echo SMART predictive status  : %SMARTSTATE%
-echo PhysicalDisk health      : %PHYSSTATE%
-echo NTFS dirty bit           : %DIRTYSTATE%
-echo CHKDSK read-only         : %CHKSTATE%
+echo Matching WINREPAIR volumes : %MATCHCOUNT%
+echo Candidate drive letter     : %USBLETTER%:
+echo Candidate physical disk    : %USBDISK%
+echo Candidate disk type        : %USBTYPE%
+echo Candidate disk ID          : %USBID%
+echo Windows C: physical disk   : %OSDISK%
 echo ---------------------------------------------------------------
-echo ASSESSMENT: %ASSESS%
+if defined USBDISK (
+  echo Candidate disk listing:
+  "%FINDSTR%" /i /c:"Disk %USBDISK%" "%LISTOUT%" 2>nul
+)
+if defined OSDISK (
+  echo Windows disk listing:
+  "%FINDSTR%" /i /c:"Disk %OSDISK%" "%LISTOUT%" 2>nul
+)
+echo ---------------------------------------------------------------
+if /i "%SAFE%"=="YES" (
+  echo TARGET STATUS: SAFE_CANDIDATE_IDENTIFIED
+  echo NEXT STAGE IS NOT ARMED YET.
+) else (
+  echo TARGET STATUS: NOT_SAFE_TO_ERASE
+)
 echo ================================================================
+echo NO FORMAT, CLEAN, PARTITION, OR FILE DELETE COMMAND WAS RUN.
 echo Take ONE photo of this screen and send it to ChatGPT.
-echo No disk repair was performed.
 exit /b 0
