@@ -2,13 +2,13 @@
 setlocal EnableExtensions EnableDelayedExpansion
 rem WR_RISK=REPAIR_WRITE
 rem WR_LOCAL_AUTH=NOT_REQUIRED
-rem WR_SUMMARY=Self-contained RescueMeAI Terms acceptance and repository-scoped GitHub App pairing.
+rem WR_SUMMARY=Pair RescueMeAI private reporting using previously accepted Terms and repository-scoped GitHub App device flow.
 rem WR_ACTION=BOOTSTRAP_RESCUEMEAI_SECURE_PRIVATE_REPORTING
-rem WR_TARGET=Recovery tooling under C:\WinRERepair only; no Windows boot files or disk layout.
-rem WR_CONSEQUENCE=Uses accepted Terms, establishes a repository-scoped outbound GitHub App credential, and uploads recovery evidence.
-rem WR_ROLLBACK=Local RescueMeAI authorization files can be removed later; no Windows recovery changes are performed.
+rem WR_TARGET=RescueMeAI recovery tooling only. No Windows boot, registry, disk, partition, or filesystem repair.
+rem WR_CONSEQUENCE=May store local Terms acceptance and GitHub App recovery credentials, then upload recovery evidence.
+rem WR_ROLLBACK=RescueMeAI local authorization files can be removed later. No Windows recovery state is modified.
 
-set "COMMAND_VERSION=RMAI-2026.08.14-SECURE-PAIRING-9"
+set "COMMAND_VERSION=RMAI-2026.08.14-SECURE-PAIRING-10"
 set "PRODUCT=RescueMeAI"
 set "DESCRIPTION=AI-ASSISTED WINDOWS RECOVERY"
 set "TERMS_VERSION=2026-08-14"
@@ -47,8 +47,8 @@ set "UI_SPACES=                                                                 
 
 title RescueMeAI - Windows Recovery
 
-rem C:\wr.cmd downloaded this exact file over api.github.com HTTPS, so current
-rem Internet access is already proven. Preserve the launcher's API address.
+rem C:\wr.cmd fetched this script through api.github.com, so Internet access
+rem is already proven. Preserve the API address supplied by the launcher.
 set "LAUNCHER_APIIP=%APIIP%"
 set "APIIP=%LAUNCHER_APIIP%"
 set "WEBIP="
@@ -69,9 +69,7 @@ set "UPLOAD_CURL_RC=NOT_RUN"
 set "DOH_WEB_STATUS=NOT_RUN"
 set "DOH_WEB_HTTP=NOT_RUN"
 set "DOH_WEB_CURL_RC=NOT_RUN"
-set "DOH_API_STATUS=NOT_RUN"
-set "DOH_API_HTTP=NOT_RUN"
-set "DOH_API_CURL_RC=NOT_RUN"
+set "DOH_WEB_IP=NOT_RUN"
 set "REPORTVOL="
 
 if not exist "%WORK%" md "%WORK%" >nul 2>&1
@@ -86,8 +84,6 @@ set "COMPONENT=required WinRE tools"
 call :REQUIRE "%CURL%" "curl.exe"
 if errorlevel 1 goto :FAIL
 call :REQUIRE "%FINDSTR%" "findstr.exe"
-if errorlevel 1 goto :FAIL
-call :REQUIRE "%NSLOOKUP%" "nslookup.exe"
 if errorlevel 1 goto :FAIL
 call :REQUIRE "%CERTUTIL%" "certutil.exe"
 if errorlevel 1 goto :FAIL
@@ -128,15 +124,11 @@ call :UI_LINE "By continuing, you acknowledge and agree that:"
 call :UI_WRAP "- Recovery results are NOT guaranteed."
 call :UI_WRAP "- AI-generated recommendations can be incorrect."
 call :UI_WRAP "- Important data and recovery keys should be backed up where possible."
-call :UI_WRAP "- Recovery-relevant technical evidence may be stored locally and, after authenticated reporting is enabled, in the configured private recovery evidence backend."
-call :UI_WRAP "- RescueMeAI is provided AS IS to the maximum extent permitted by law."
-call :UI_WRAP "- You assume the risks of using recovery software and liability is limited to the maximum extent permitted by applicable law."
-call :UI_WRAP "- Mandatory statutory or consumer rights remain where law does not permit waiver or exclusion."
+call :UI_WRAP "- RescueMeAI is provided AS IS and subject to the project legal terms to the maximum extent permitted by applicable law."
+call :UI_WRAP "- General Terms acceptance never authorizes a destructive repair action."
 call :UI_SECTION "LEGAL DOCUMENTS"
 call :UI_LINE "Legal repository: %LEGAL_BASE%"
 call :UI_LINE "Legal landing file: %LEGAL_FILE%"
-call :UI_SECTION "IMPORTANT"
-call :UI_WRAP "Typing ACCEPT agrees to the general RescueMeAI legal terms. It does NOT authorize a destructive repair. Destructive actions require a separate, action-specific local authorization when RescueMeAI permits them."
 call :UI_SECTION "ACTION REQUIRED"
 call :UI_WRAP "Type exactly ACCEPT to agree and continue. Anything else stops RescueMeAI safely and returns you to the command prompt."
 echo.
@@ -161,7 +153,53 @@ set "TERMS_STATUS=ACCEPTED"
 call :WRITE_DETAILS
 
 rem =========================================================================
-rem SECURE GITHUB APP DEVICE FLOW
+rem RESOLVE github.com WITHOUT DEPENDING ON WINRE DNS
+rem =========================================================================
+set "STAGE=RESOLVE_GITHUB_DEVICE_HOST"
+set "COMPONENT=github.com via DNS-over-HTTPS"
+set "AUTH_STATUS=RESOLVING_GITHUB"
+
+rem First reuse a previously HTTPS-validated address if available.
+if exist "%WORK%\github-web-ip.txt" (
+  set "WEBIP="
+  set /p "WEBIP="<"%WORK%\github-web-ip.txt"
+  if defined WEBIP call :TEST_GITHUB_IP "!WEBIP!"
+  if errorlevel 1 set "WEBIP="
+)
+
+rem Pairing-9 proved Cloudflare DoH itself is reachable. Pairing-10 uses a
+rem dedicated parser for Answer[].data rather than the generic JSON helper.
+if not defined WEBIP (
+  call :DOH_RESOLVE_A "%WEBHOST%" WEBIP
+  set "DOH_WEB_STATUS=!DOH_LAST_STATUS!"
+  set "DOH_WEB_HTTP=!DOH_LAST_HTTP!"
+  set "DOH_WEB_CURL_RC=!DOH_LAST_CURL_RC!"
+  set "DOH_WEB_IP=!WEBIP!"
+  if defined WEBIP (
+    call :TEST_GITHUB_IP "!WEBIP!"
+    if errorlevel 1 set "WEBIP="
+  )
+)
+
+rem Conventional DNS remains a fallback only.
+if not defined WEBIP if exist "%NSLOOKUP%" (
+  for %%D in (64.71.255.204 1.1.1.1 8.8.8.8 9.9.9.9) do (
+    if not defined WEBIP call :NSLOOKUP_GITHUB "%%D"
+  )
+)
+
+if not defined WEBIP (
+  set "COMPONENT_RC=92"
+  set "FAIL_RC=92"
+  set "AUTH_STATUS=GITHUB_ADDRESS_FAILED"
+  set "FAIL_REASON=Internet access is working, but RescueMeAI could not obtain an HTTPS-validated address for github.com."
+  goto :FAIL
+)
+>"%WORK%\github-web-ip.txt" echo(!WEBIP!
+call :WRITE_DETAILS
+
+rem =========================================================================
+rem GITHUB APP DEVICE FLOW
 rem =========================================================================
 set "STAGE=GITHUB_APP_DEVICE_CODE"
 set "COMPONENT=github.com/login/device/code"
@@ -190,16 +228,15 @@ if errorlevel 1 set "EXPIRES_IN=900"
 call :JSON_VALUE "%WORK%\github-device.json" "interval" POLL_INTERVAL
 if errorlevel 1 set "POLL_INTERVAL=5"
 
-call :UI_HEADER INFO "SECURE GITHUB APP PAIRING" "REPAIR WRITE - AUTHORIZATION ONLY"
-call :UI_SECTION "SECURE GITHUB APP PAIRING"
-call :UI_WRAP "Private recovery evidence is restricted to %LOGREPO%."
+call :UI_HEADER INFO "SECURE GITHUB APP PAIRING" "AUTHORIZATION ONLY - NO WINDOWS REPAIR"
 call :UI_SECTION "ON YOUR PHONE"
 call :UI_LINE "Open: !VERIFY_URI!"
 call :UI_LINE "Enter this one-time code:"
 echo.
 call :UI_CENTER "!USER_CODE!"
 echo.
-call :UI_WRAP "[WAITING] Approve the RescueMeAI authorization request on your phone. This PC will continue automatically after approval. Do not close this window."
+call :UI_WRAP "[WAITING] Approve the RescueMeAI GitHub App request. This PC will continue automatically after approval."
+call :UI_WRAP "The authorization is restricted to the RescueMeAI GitHub App and the configured private recovery repository."
 set "AUTH_STATUS=WAITING_FOR_USER"
 call :WRITE_DETAILS
 
@@ -213,7 +250,7 @@ if !POLL_COUNT! GTR !MAX_POLLS! (
   set "AUTH_STATUS=EXPIRED"
   set "COMPONENT_RC=90"
   set "FAIL_RC=90"
-  set "FAIL_REASON=GitHub one-time device code expired before authorization completed."
+  set "FAIL_REASON=The GitHub one-time device code expired before authorization completed."
   goto :FAIL
 )
 call :SLEEP !POLL_INTERVAL!
@@ -245,10 +282,13 @@ set "REFRESH_TOKEN="
 set "AUTH_STATUS=AUTHORIZED"
 call :WRITE_DETAILS
 
+rem =========================================================================
+rem PRIVATE REPORT UPLOAD
+rem =========================================================================
 set "STAGE=PRIVATE_REPORT_UPLOAD"
 set "COMPONENT=private evidence upload"
 set "UPLOAD_STATUS=UPLOADING"
-call :WRITE_REPORT PASS 0 "RescueMeAI Terms accepted and repository-scoped GitHub App authorization completed."
+call :WRITE_REPORT PASS 0 "RescueMeAI GitHub App authorization completed."
 call :WRITE_DETAILS
 call :UPLOAD_PRIVATE
 if errorlevel 1 goto :FAIL
@@ -259,41 +299,30 @@ call :USB_COPY
 
 call :UI_HEADER PASS "PRIVATE REPORTING ONLINE" "NO NEW ACTION"
 call :UI_SECTION "[PASS] PRIVATE REPORTING ONLINE"
-call :UI_WRAP "RescueMeAI is paired successfully and can send authenticated private recovery reports to the configured evidence repository."
-call :UI_WRAP "No Windows repair, boot, disk, partition, filesystem, or registry repair was performed by this pairing build."
+call :UI_WRAP "RescueMeAI is paired successfully and can send authenticated private recovery reports."
+call :UI_WRAP "No Windows repair, boot, registry, disk, partition, or filesystem change was performed by this pairing build."
 call :UI_SECTION "WHAT YOU SHOULD DO"
 call :UI_WRAP "Reply to ChatGPT with exactly: pass"
 call :UI_SECTION "ADDITIONAL INFORMATION REQUIRED"
 call :UI_LINE "None"
-call :UI_SECTION "ADDITIONAL INSTRUCTIONS"
-call :UI_WRAP "Do not rerun C:\wr.cmd unless RescueMeAI asks you to."
 call :UI_LINE "%UI_BORDER%"
-color 07 >nul 2>&1
-title Command Prompt
 exit /b 0
 
 :TERMS_NOT_ACCEPTED
 call :UI_HEADER WARNING "TERMS NOT ACCEPTED" "NO RECOVERY ACTION"
 call :UI_SECTION "[WARNING] RESCUEMEAI STOPPED SAFELY"
-call :UI_WRAP "The required phrase ACCEPT was not entered exactly, so RescueMeAI did not record acceptance of the Terms of Use."
+call :UI_WRAP "The required word ACCEPT was not entered exactly, so RescueMeAI did not record acceptance and did not continue."
 call :UI_SECTION "WHAT HAPPENED"
-call :UI_LINE "Terms acceptance       : NOT RECORDED"
-call :UI_LINE "GitHub App authorization: NOT STARTED"
+call :UI_LINE "Terms acceptance        : NOT RECORDED"
+call :UI_LINE "GitHub authorization    : NOT STARTED"
 call :UI_LINE "Private reporting       : NOT STARTED"
 call :UI_LINE "Windows recovery actions: NOT STARTED"
 call :UI_LINE "Destructive actions     : NONE"
-call :UI_LINE "Windows recovery state  : NOT CHANGED"
-call :UI_LINE "RescueMeAI local logs    : UPDATED"
-call :UI_SECTION "WHY RESCUEMEAI STOPPED"
-call :UI_WRAP "RescueMeAI requires the exact word ACCEPT before it can continue beyond the legal acceptance gate. Any other entry is treated as a safe decline or cancellation."
-call :UI_SECTION "WHAT HAPPENS NEXT"
-call :UI_WRAP "RescueMeAI is exiting now and returning control to the Windows Recovery command prompt."
-call :UI_WRAP "If you want to start again later, run: C:\wr.cmd"
-call :UI_SECTION "ADDITIONAL INFORMATION REQUIRED"
-call :UI_LINE "None"
+call :UI_SECTION "NEXT"
+call :UI_WRAP "Control is returning automatically to the Windows Recovery command prompt. Run C:\wr.cmd later if you want to try again."
 call :UI_LINE "%UI_BORDER%"
 echo.
-call :UI_LINE "Returning to command prompt..."
+echo Returning to command prompt...
 color 07 >nul 2>&1
 title Command Prompt
 exit /b 40
@@ -304,37 +333,36 @@ call :WRITE_DETAILS
 call :USB_COPY
 call :UI_HEADER ERROR "SECURE PAIRING FAILED" "NO RECOVERY ACTION"
 call :UI_SECTION "[FAIL] RESCUEMEAI SECURE PAIRING FAILED"
-call :UI_LINE "Stage         : !STAGE!"
-call :UI_LINE "Component     : !COMPONENT!"
-call :UI_LINE "Return code   : !FAIL_RC!"
-call :UI_LINE "Component RC  : !COMPONENT_RC!"
-call :UI_LINE "Terms         : !TERMS_STATUS!"
-call :UI_LINE "GitHub auth   : !AUTH_STATUS!"
-call :UI_LINE "Auth HTTP     : !AUTH_HTTP!"
-call :UI_LINE "Auth curl RC  : !AUTH_CURL_RC!"
-call :UI_LINE "Web DoH       : !DOH_WEB_STATUS!"
-call :UI_LINE "Web DoH HTTP  : !DOH_WEB_HTTP!"
-call :UI_LINE "Web DoH curl  : !DOH_WEB_CURL_RC!"
-call :UI_LINE "Report upload : !UPLOAD_STATUS!"
-call :UI_LINE "Upload HTTP   : !UPLOAD_HTTP!"
-call :UI_LINE "Upload curl   : !UPLOAD_CURL_RC!"
+call :UI_LINE "Stage          : !STAGE!"
+call :UI_LINE "Component      : !COMPONENT!"
+call :UI_LINE "Return code    : !FAIL_RC!"
+call :UI_LINE "Component RC   : !COMPONENT_RC!"
+call :UI_LINE "Terms          : !TERMS_STATUS!"
+call :UI_LINE "GitHub auth    : !AUTH_STATUS!"
+call :UI_LINE "Auth HTTP      : !AUTH_HTTP!"
+call :UI_LINE "Auth curl RC   : !AUTH_CURL_RC!"
+call :UI_LINE "Web DoH        : !DOH_WEB_STATUS!"
+call :UI_LINE "Web DoH HTTP   : !DOH_WEB_HTTP!"
+call :UI_LINE "Web DoH curl   : !DOH_WEB_CURL_RC!"
+call :UI_LINE "Web DoH IP     : !DOH_WEB_IP!"
+call :UI_LINE "Report upload  : !UPLOAD_STATUS!"
+call :UI_LINE "Upload HTTP    : !UPLOAD_HTTP!"
+call :UI_LINE "Upload curl RC : !UPLOAD_CURL_RC!"
 call :UI_SECTION "REASON"
 call :UI_WRAP "!FAIL_REASON!"
-call :UI_SECTION "WHAT YOU SHOULD DO"
-call :UI_WRAP "Reply to ChatGPT with exactly: fail"
-call :UI_SECTION "ADDITIONAL INFORMATION REQUIRED"
-call :UI_WRAP "Screenshot this exact screen only if private reporting is not online."
-call :UI_SECTION "EXIT"
-call :UI_WRAP "After taking the screenshot, press any key to return to the Windows Recovery command prompt."
-call :UI_WRAP "Nothing destructive was attempted."
+call :UI_SECTION "SAFETY"
+call :UI_WRAP "No Windows repair or destructive action was performed by this pairing attempt."
+call :UI_SECTION "NEXT"
+call :UI_WRAP "RescueMeAI is returning automatically to the Windows Recovery command prompt. The failure details above remain on screen for review or a photo."
 call :UI_LINE "%UI_BORDER%"
-pause >nul
+echo.
+echo Returning to command prompt...
 color 07 >nul 2>&1
 title Command Prompt
 exit /b !FAIL_RC!
 
 rem =========================================================================
-rem CENTRAL WINRE UI RENDERER
+rem CENTRAL WINRE UI
 rem =========================================================================
 :UI_SETUP
 "%MODE%" con: cols=100 lines=50 >nul 2>&1
@@ -345,11 +373,8 @@ set "UI_THEME=%~1"
 set "UI_COLOR=07"
 if /i "!UI_THEME!"=="INFO" set "UI_COLOR=0B"
 if /i "!UI_THEME!"=="PASS" set "UI_COLOR=0A"
-if /i "!UI_THEME!"=="SUCCESS" set "UI_COLOR=0A"
 if /i "!UI_THEME!"=="WARNING" set "UI_COLOR=0E"
 if /i "!UI_THEME!"=="ERROR" set "UI_COLOR=0C"
-if /i "!UI_THEME!"=="FAIL" set "UI_COLOR=0C"
-if /i "!UI_THEME!"=="NEUTRAL" set "UI_COLOR=07"
 color !UI_COLOR! >nul 2>&1
 exit /b 0
 
@@ -437,72 +462,24 @@ set "FAIL_RC=91"
 set "FAIL_REASON=Required %~2 was not found in the recovery environment."
 exit /b 1
 
-:REQUEST_DEVICE_CODE
-set "DEVICE_JSON=%WORK%\github-device.json"
-set "DEVICE_HTTP_FILE=%WORK%\github-device-http.txt"
-set "CURLERR=%WORK%\GITHUB_CURL_ERROR.txt"
-if exist "%DEVICE_JSON%" del /f /q "%DEVICE_JSON%" >nul 2>&1
-if exist "%DEVICE_HTTP_FILE%" del /f /q "%DEVICE_HTTP_FILE%" >nul 2>&1
-if exist "%CURLERR%" del /f /q "%CURLERR%" >nul 2>&1
-set "DEVICE_OK=NO"
-
-rem 1. Reuse only a previously HTTPS-validated github.com address.
-if exist "%WORK%\github-web-ip.txt" (
-  set "WEB_CAND="
-  set /p "WEB_CAND="<"%WORK%\github-web-ip.txt"
-  if defined WEB_CAND call :TRY_DEVICE_IP "!WEB_CAND!"
-)
-if /i "!DEVICE_OK!"=="YES" exit /b 0
-
-rem 2. DNS-over-HTTPS does not depend on WinRE's DNS client. Connect to
-rem Cloudflare by fixed IP while preserving cloudflare-dns.com TLS/SNI.
-call :DOH_RESOLVE "%WEBHOST%" WEB_DOH_IP
-set "DOH_WEB_STATUS=!DOH_LAST_STATUS!"
-set "DOH_WEB_HTTP=!DOH_LAST_HTTP!"
-set "DOH_WEB_CURL_RC=!DOH_LAST_CURL_RC!"
-if defined WEB_DOH_IP call :TRY_DEVICE_IP "!WEB_DOH_IP!"
-if /i "!DEVICE_OK!"=="YES" exit /b 0
-
-rem 3. Preserve conventional DNS attempts for environments where they work.
-for %%D in (64.71.255.204 1.1.1.1 8.8.8.8 9.9.9.9) do (
-  if /i not "!DEVICE_OK!"=="YES" call :LOOKUP_AND_TRY_DEVICE "%%D"
-)
-if /i "!DEVICE_OK!"=="YES" exit /b 0
-
-rem 4. Final native-resolution attempt for completeness.
-"%CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 15 --max-time 120 -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data "client_id=%GITHUB_APP_CLIENT_ID%" "https://github.com/login/device/code" -o "%DEVICE_JSON%" -w "%%{http_code}" >"%DEVICE_HTTP_FILE%" 2>"%CURLERR%"
-set "AUTH_CURL_RC=!errorlevel!"
-set "AUTH_HTTP="
-if exist "%DEVICE_HTTP_FILE%" set /p "AUTH_HTTP="<"%DEVICE_HTTP_FILE%"
-if "!AUTH_CURL_RC!"=="0" if "!AUTH_HTTP!"=="200" (
-  set "DEVICE_OK=YES"
-  set "AUTH_STATUS=DEVICE_CODE_READY"
-  exit /b 0
-)
-set "COMPONENT_RC=!AUTH_CURL_RC!"
-set "FAIL_RC=90"
-set "AUTH_STATUS=DEVICE_CODE_FAILED"
-set "FAIL_REASON=Could not reach GitHub's device-authorization endpoint. Normal DNS failed and the DNS-over-HTTPS fallback did not produce a working GitHub address."
-exit /b 1
-
-:DOH_RESOLVE
+:DOH_RESOLVE_A
 set "DOH_QUERY_HOST=%~1"
 set "DOH_RETURN_VAR=%~2"
 set "%DOH_RETURN_VAR%="
 set "DOH_LAST_STATUS=FAIL"
 set "DOH_LAST_HTTP=NOT_RUN"
 set "DOH_LAST_CURL_RC=NOT_RUN"
-set "DOH_JSON=%WORK%\doh-response.json"
-set "DOH_HTTP_FILE=%WORK%\doh-http.txt"
-set "DOH_ERR=%WORK%\doh-curl-error.txt"
 for %%I in (1.1.1.1 1.0.0.1) do (
-  if /i not "!DOH_LAST_STATUS!"=="PASS" call :TRY_DOH_IP "%%I"
+  if /i not "!DOH_LAST_STATUS!"=="PASS" call :TRY_DOH_A "%%I"
 )
 if /i "!DOH_LAST_STATUS!"=="PASS" exit /b 0
 exit /b 1
 
-:TRY_DOH_IP
+:TRY_DOH_A
 set "DOH_RESOLVER_IP=%~1"
+set "DOH_JSON=%WORK%\doh-response.json"
+set "DOH_HTTP_FILE=%WORK%\doh-http.txt"
+set "DOH_ERR=%WORK%\doh-curl-error.txt"
 if exist "%DOH_JSON%" del /f /q "%DOH_JSON%" >nul 2>&1
 if exist "%DOH_HTTP_FILE%" del /f /q "%DOH_HTTP_FILE%" >nul 2>&1
 if exist "%DOH_ERR%" del /f /q "%DOH_ERR%" >nul 2>&1
@@ -512,14 +489,35 @@ set "DOH_LAST_HTTP="
 if exist "%DOH_HTTP_FILE%" set /p "DOH_LAST_HTTP="<"%DOH_HTTP_FILE%"
 if not "!DOH_LAST_CURL_RC!"=="0" exit /b 1
 if not "!DOH_LAST_HTTP!"=="200" exit /b 1
-set "DOH_RESULT_IP="
-call :JSON_VALUE "%DOH_JSON%" "data" DOH_RESULT_IP >nul 2>&1
-if not defined DOH_RESULT_IP exit /b 1
-set "%DOH_RETURN_VAR%=!DOH_RESULT_IP!"
+
+rem Cloudflare's JSON answer contains Answer objects with data:"IPv4".
+rem Concatenate lines first because JSON formatting may be compact or pretty.
+set "DOH_JOIN="
+for /f "usebackq delims=" %%L in ("%DOH_JSON%") do set "DOH_JOIN=!DOH_JOIN!%%L"
+if not defined DOH_JOIN exit /b 1
+set "DOH_TAIL=!DOH_JOIN:*data=!"
+if "!DOH_TAIL!"=="!DOH_JOIN!" exit /b 1
+set "DOH_RAW="
+for /f "tokens=2 delims=:" %%A in ("!DOH_TAIL!") do set "DOH_RAW=%%A"
+if not defined DOH_RAW exit /b 1
+set "DOH_IP="
+for /f "tokens=1 delims=,}]" %%A in ("!DOH_RAW!") do set "DOH_IP=%%A"
+set "DOH_IP=!DOH_IP:"=!"
+set "DOH_IP=!DOH_IP: =!"
+if not defined DOH_IP exit /b 1
+echo(!DOH_IP!|"%FINDSTR%" /r /x "[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*" >nul 2>&1
+if errorlevel 1 exit /b 1
+set "%DOH_RETURN_VAR%=!DOH_IP!"
 set "DOH_LAST_STATUS=PASS"
 exit /b 0
 
-:LOOKUP_AND_TRY_DEVICE
+:TEST_GITHUB_IP
+set "TEST_IP=%~1"
+if not defined TEST_IP exit /b 1
+"%CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 10 --max-time 30 --resolve "%WEBHOST%:443:%TEST_IP%" -I "https://github.com/" -o NUL >nul 2>&1
+exit /b !errorlevel!
+
+:NSLOOKUP_GITHUB
 set "LOOKUP_DNS=%~1"
 set "LOOKUP_IP="
 for /f "delims=" %%L in ('"%NSLOOKUP%" %WEBHOST% %LOOKUP_DNS% 2^>nul ^| "%FINDSTR%" /R "[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*"') do (
@@ -527,25 +525,30 @@ for /f "delims=" %%L in ('"%NSLOOKUP%" %WEBHOST% %LOOKUP_DNS% 2^>nul ^| "%FINDST
   for %%T in (%%L) do set "LOOKUP_TOKEN=%%T"
   if defined LOOKUP_TOKEN if /i not "!LOOKUP_TOKEN!"=="%LOOKUP_DNS%" set "LOOKUP_IP=!LOOKUP_TOKEN!"
 )
-if defined LOOKUP_IP call :TRY_DEVICE_IP "!LOOKUP_IP!"
+if not defined LOOKUP_IP exit /b 1
+call :TEST_GITHUB_IP "!LOOKUP_IP!"
+if errorlevel 1 exit /b 1
+set "WEBIP=!LOOKUP_IP!"
 exit /b 0
 
-:TRY_DEVICE_IP
-set "WEB_CAND=%~1"
-if not defined WEB_CAND exit /b 1
+:REQUEST_DEVICE_CODE
+set "DEVICE_JSON=%WORK%\github-device.json"
+set "DEVICE_HTTP_FILE=%WORK%\github-device-http.txt"
+set "CURLERR=%WORK%\GITHUB_CURL_ERROR.txt"
 if exist "%DEVICE_JSON%" del /f /q "%DEVICE_JSON%" >nul 2>&1
 if exist "%DEVICE_HTTP_FILE%" del /f /q "%DEVICE_HTTP_FILE%" >nul 2>&1
-"%CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 12 --max-time 90 --resolve "%WEBHOST%:443:%WEB_CAND%" -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data "client_id=%GITHUB_APP_CLIENT_ID%" "https://github.com/login/device/code" -o "%DEVICE_JSON%" -w "%%{http_code}" >"%DEVICE_HTTP_FILE%" 2>"%CURLERR%"
+"%CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 15 --max-time 90 --resolve "%WEBHOST%:443:%WEBIP%" -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data "client_id=%GITHUB_APP_CLIENT_ID%" "https://github.com/login/device/code" -o "%DEVICE_JSON%" -w "%%{http_code}" >"%DEVICE_HTTP_FILE%" 2>"%CURLERR%"
 set "AUTH_CURL_RC=!errorlevel!"
 set "AUTH_HTTP="
 if exist "%DEVICE_HTTP_FILE%" set /p "AUTH_HTTP="<"%DEVICE_HTTP_FILE%"
 if "!AUTH_CURL_RC!"=="0" if "!AUTH_HTTP!"=="200" (
-  set "WEBIP=%WEB_CAND%"
-  >"%WORK%\github-web-ip.txt" echo(!WEBIP!
-  set "DEVICE_OK=YES"
   set "AUTH_STATUS=DEVICE_CODE_READY"
   exit /b 0
 )
+set "COMPONENT_RC=!AUTH_CURL_RC!"
+set "FAIL_RC=90"
+set "AUTH_STATUS=DEVICE_CODE_FAILED"
+set "FAIL_REASON=RescueMeAI resolved github.com, but GitHub's device-authorization endpoint did not return a successful response."
 exit /b 1
 
 :POLL_TOKEN
@@ -561,7 +564,7 @@ if not "!AUTH_CURL_RC!"=="0" (
   set "COMPONENT_RC=!AUTH_CURL_RC!"
   set "FAIL_RC=90"
   set "AUTH_STATUS=TOKEN_POLL_NETWORK_FAILED"
-  set "FAIL_REASON=The GitHub authorization status request failed at curl/network/TLS."
+  set "FAIL_REASON=The GitHub authorization status request failed at the network or TLS layer."
   exit /b 90
 )
 if not "!AUTH_HTTP!"=="200" (
@@ -615,29 +618,37 @@ set "FAIL_REASON=GitHub returned an unexpected device-flow response."
 exit /b 96
 
 :UPLOAD_PRIVATE
-set "UPLOADSRC=%WORK%\PRIVATE_UPLOAD_REPORT.txt"
-set "B64FILE=%WORK%\PRIVATE_UPLOAD_REPORT.b64"
-set "B64CLEAN=%WORK%\PRIVATE_UPLOAD_REPORT.base64.txt"
-set "JSONFILE=%WORK%\PRIVATE_UPLOAD_REQUEST.json"
-set "RESPFILE=%WORK%\PRIVATE_UPLOAD_RESPONSE.json"
-set "HTTPFILE=%WORK%\PRIVATE_UPLOAD_HTTP.txt"
+if not defined APIIP (
+  call :DOH_RESOLVE_A "%APIHOST%" APIIP
+)
+if not defined APIIP (
+  set "UPLOAD_STATUS=FAIL_API_ADDRESS"
+  set "COMPONENT_RC=92"
+  set "FAIL_RC=92"
+  set "FAIL_REASON=GitHub authorization succeeded, but RescueMeAI could not resolve api.github.com for the private report upload."
+  exit /b 92
+)
 set "LOGTOKEN="
 set /p "LOGTOKEN="<"%TOKENFILE%"
 if not defined LOGTOKEN (
   set "UPLOAD_STATUS=FAIL_EMPTY_TOKEN"
   set "COMPONENT_RC=90"
   set "FAIL_RC=90"
-  set "FAIL_REASON=The local GitHub App authorization token file was empty."
+  set "FAIL_REASON=The saved GitHub App authorization token was empty."
   exit /b 90
 )
+set "UPLOADSRC=%WORK%\PRIVATE_UPLOAD_REPORT.txt"
+set "B64FILE=%WORK%\PRIVATE_UPLOAD_REPORT.b64"
+set "B64CLEAN=%WORK%\PRIVATE_UPLOAD_REPORT.base64.txt"
+set "JSONFILE=%WORK%\PRIVATE_UPLOAD_REQUEST.json"
+set "RESPFILE=%WORK%\PRIVATE_UPLOAD_RESPONSE.json"
+set "HTTPFILE=%WORK%\PRIVATE_UPLOAD_HTTP.txt"
 >"%UPLOADSRC%" echo PRIVATE RESCUEMEAI RECOVERY REPORT
 >>"%UPLOADSRC%" echo =================================
 type "%REPORT%" >>"%UPLOADSRC%"
-if exist "%DETAILS%" (
-  >>"%UPLOADSRC%" echo.
-  >>"%UPLOADSRC%" echo --- RUN_DETAILS ---
-  type "%DETAILS%" >>"%UPLOADSRC%"
-)
+>>"%UPLOADSRC%" echo.
+>>"%UPLOADSRC%" echo --- RUN_DETAILS ---
+type "%DETAILS%" >>"%UPLOADSRC%"
 "%CERTUTIL%" -f -encode "%UPLOADSRC%" "%B64FILE%" >nul 2>&1
 if errorlevel 1 (
   set "LOGTOKEN="
@@ -655,87 +666,29 @@ if not defined B64 (
   set "UPLOAD_STATUS=FAIL_ENCODE"
   set "COMPONENT_RC=91"
   set "FAIL_RC=91"
-  set "FAIL_REASON=Encoded private recovery report was empty."
+  set "FAIL_REASON=The encoded private recovery report was empty."
   exit /b 91
 )
 set "UPLOADPATH=reports/inbox/pairing-%RANDOM%%RANDOM%.txt"
 >"%JSONFILE%" echo {"message":"RescueMeAI secure pairing report","content":"!B64!"}
 set "PUTURL=https://%APIHOST%/repos/%LOGREPO%/contents/!UPLOADPATH!"
-set "UPLOAD_OK=NO"
-if defined APIIP call :TRY_API_UPLOAD "!APIIP!"
-if /i "!UPLOAD_OK!"=="YES" (
-  set "LOGTOKEN="
-  exit /b 0
-)
-if exist "%WORK%\github-api-ip.txt" (
-  set "API_CAND="
-  set /p "API_CAND="<"%WORK%\github-api-ip.txt"
-  if defined API_CAND call :TRY_API_UPLOAD "!API_CAND!"
-)
-if /i "!UPLOAD_OK!"=="YES" (
-  set "LOGTOKEN="
-  exit /b 0
-)
-call :DOH_RESOLVE "%APIHOST%" API_DOH_IP
-set "DOH_API_STATUS=!DOH_LAST_STATUS!"
-set "DOH_API_HTTP=!DOH_LAST_HTTP!"
-set "DOH_API_CURL_RC=!DOH_LAST_CURL_RC!"
-if defined API_DOH_IP call :TRY_API_UPLOAD "!API_DOH_IP!"
-if /i "!UPLOAD_OK!"=="YES" (
-  set "LOGTOKEN="
-  exit /b 0
-)
-for %%D in (64.71.255.204 1.1.1.1 8.8.8.8 9.9.9.9) do (
-  if /i not "!UPLOAD_OK!"=="YES" call :LOOKUP_AND_TRY_API "%%D"
-)
-if /i "!UPLOAD_OK!"=="YES" (
-  set "LOGTOKEN="
-  exit /b 0
-)
-"%CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 15 --max-time 120 -X PUT -H "Accept: application/vnd.github+json" -H "Authorization: Bearer !LOGTOKEN!" -H "X-GitHub-Api-Version: 2022-11-28" -H "Content-Type: application/json" --data-binary "@%JSONFILE%" -o "%RESPFILE%" -w "%%{http_code}" "!PUTURL!" >"%HTTPFILE%" 2>"%CURLERR%"
+"%CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 15 --max-time 120 --resolve "%APIHOST%:443:%APIIP%" -X PUT -H "Accept: application/vnd.github+json" -H "Authorization: Bearer !LOGTOKEN!" -H "X-GitHub-Api-Version: 2022-11-28" -H "Content-Type: application/json" --data-binary "@%JSONFILE%" -o "%RESPFILE%" -w "%%{http_code}" "!PUTURL!" >"%HTTPFILE%" 2>"%WORK%\GITHUB_CURL_ERROR.txt"
 set "UPLOAD_CURL_RC=!errorlevel!"
 set "UPLOAD_HTTP="
 if exist "%HTTPFILE%" set /p "UPLOAD_HTTP="<"%HTTPFILE%"
 set "LOGTOKEN="
 if "!UPLOAD_CURL_RC!"=="0" if "!UPLOAD_HTTP!"=="201" (
   set "UPLOAD_STATUS=PASS"
+  >"%WORK%\github-api-ip.txt" echo(!APIIP!
   exit /b 0
 )
 set "UPLOAD_STATUS=FAIL"
 set "COMPONENT_RC=!UPLOAD_CURL_RC!"
 set "FAIL_RC=90"
 set "FAIL_REASON=GitHub App authorization succeeded, but the private recovery report could not be uploaded."
-if "!UPLOAD_HTTP!"=="403" set "FAIL_REASON=GitHub App authorization succeeded, but Contents write permission is not available for the private evidence repository."
+if "!UPLOAD_HTTP!"=="403" set "FAIL_REASON=GitHub App authorization succeeded, but Contents write permission is unavailable for the private evidence repository."
 if "!UPLOAD_HTTP!"=="404" set "FAIL_REASON=GitHub App authorization succeeded, but the app cannot access the configured private evidence repository."
 exit /b 90
-
-:LOOKUP_AND_TRY_API
-set "LOOKUP_DNS=%~1"
-set "LOOKUP_IP="
-for /f "delims=" %%L in ('"%NSLOOKUP%" %APIHOST% %LOOKUP_DNS% 2^>nul ^| "%FINDSTR%" /R "[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*"') do (
-  set "LOOKUP_TOKEN="
-  for %%T in (%%L) do set "LOOKUP_TOKEN=%%T"
-  if defined LOOKUP_TOKEN if /i not "!LOOKUP_TOKEN!"=="%LOOKUP_DNS%" set "LOOKUP_IP=!LOOKUP_TOKEN!"
-)
-if defined LOOKUP_IP call :TRY_API_UPLOAD "!LOOKUP_IP!"
-exit /b 0
-
-:TRY_API_UPLOAD
-set "API_CAND=%~1"
-if not defined API_CAND exit /b 1
-if exist "%HTTPFILE%" del /f /q "%HTTPFILE%" >nul 2>&1
-"%CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 12 --max-time 120 --resolve "%APIHOST%:443:%API_CAND%" -X PUT -H "Accept: application/vnd.github+json" -H "Authorization: Bearer !LOGTOKEN!" -H "X-GitHub-Api-Version: 2022-11-28" -H "Content-Type: application/json" --data-binary "@%JSONFILE%" -o "%RESPFILE%" -w "%%{http_code}" "!PUTURL!" >"%HTTPFILE%" 2>"%CURLERR%"
-set "UPLOAD_CURL_RC=!errorlevel!"
-set "UPLOAD_HTTP="
-if exist "%HTTPFILE%" set /p "UPLOAD_HTTP="<"%HTTPFILE%"
-if "!UPLOAD_CURL_RC!"=="0" if "!UPLOAD_HTTP!"=="201" (
-  set "APIIP=%API_CAND%"
-  >"%WORK%\github-api-ip.txt" echo(!APIIP!
-  set "UPLOAD_OK=YES"
-  set "UPLOAD_STATUS=PASS"
-  exit /b 0
-)
-exit /b 1
 
 :JSON_VALUE
 set "JV_FILE=%~1"
@@ -787,17 +740,14 @@ exit /b 0
 >>"%DETAILS%" echo github_auth_status=!AUTH_STATUS!
 >>"%DETAILS%" echo auth_http=!AUTH_HTTP!
 >>"%DETAILS%" echo auth_curl_rc=!AUTH_CURL_RC!
->>"%DETAILS%" echo web_doh_status=!DOH_WEB_STATUS!
->>"%DETAILS%" echo web_doh_http=!DOH_WEB_HTTP!
->>"%DETAILS%" echo web_doh_curl_rc=!DOH_WEB_CURL_RC!
->>"%DETAILS%" echo api_doh_status=!DOH_API_STATUS!
->>"%DETAILS%" echo api_doh_http=!DOH_API_HTTP!
->>"%DETAILS%" echo api_doh_curl_rc=!DOH_API_CURL_RC!
+>>"%DETAILS%" echo github_web_ip=!WEBIP!
+>>"%DETAILS%" echo doh_web_status=!DOH_WEB_STATUS!
+>>"%DETAILS%" echo doh_web_http=!DOH_WEB_HTTP!
+>>"%DETAILS%" echo doh_web_curl_rc=!DOH_WEB_CURL_RC!
+>>"%DETAILS%" echo doh_web_ip=!DOH_WEB_IP!
 >>"%DETAILS%" echo private_report_upload=!UPLOAD_STATUS!
 >>"%DETAILS%" echo upload_http=!UPLOAD_HTTP!
 >>"%DETAILS%" echo upload_curl_rc=!UPLOAD_CURL_RC!
->>"%DETAILS%" echo legal_repository=%LEGAL_BASE%
->>"%DETAILS%" echo legal_file=%LEGAL_FILE%
 >>"%DETAILS%" echo reason=!FAIL_REASON!
 exit /b 0
 
