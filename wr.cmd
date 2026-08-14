@@ -1,56 +1,102 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-rem Persistent WinRE launcher. Prefer GitHub Contents API raw mode to avoid
-rem stale raw.githubusercontent.com edge-cache responses.
-set "LAUNCHER_VERSION=WR-LAUNCHER-2026.08.14-0102-ET"
-set "BUILD_TIME=2026-08-14 01:02 ET"
+rem Persistent WinRE launcher.
+rem - Checks connectivity before doing anything else.
+rem - Restores WinRE networking only when connectivity is missing.
+rem - Prefers GitHub Contents API raw mode to avoid stale raw CDN responses.
+set "LAUNCHER_VERSION=WR-LAUNCHER-2026.08.14-0108-ET"
+set "BUILD_TIME=2026-08-14 01:08 ET"
 set "CURL=C:\Windows\System32\curl.exe"
 set "WPEUTIL=X:\Windows\System32\wpeutil.exe"
+set "IPCONFIG=X:\Windows\System32\ipconfig.exe"
+set "PING=X:\Windows\System32\ping.exe"
 set "NSLOOKUP=C:\Windows\System32\nslookup.exe"
 set "FINDSTR=C:\Windows\System32\findstr.exe"
 set "DNS=64.71.255.204"
 set "APIHOST=api.github.com"
-set "APIURL=https://api.github.com/repos/RennieBeekharry/winre-repair/contents/next.cmd?ref=main"
+set "APIURL=https://api.github.com/repos/RennieBeekharry/winre-repair/contents/next.cmd?ref=main&cb=%RANDOM%%RANDOM%%RANDOM%"
 set "RAWURL=https://raw.githubusercontent.com/RennieBeekharry/winre-repair/main/next.cmd?cb=%RANDOM%%RANDOM%%RANDOM%"
 set "OUT=X:\next.cmd"
 set "TMP=X:\next.cmd.tmp"
 
-echo WR launcher: %LAUNCHER_VERSION%
-echo Built:       %BUILD_TIME%
+echo ================================================================
+echo WINRE-REPAIR LAUNCHER
+echo Version: %LAUNCHER_VERSION%
+echo Built:   %BUILD_TIME%
+echo ================================================================
 
+if not exist "%CURL%" (
+  echo WR FAILED: curl.exe was not found at %CURL%.
+  exit /b 91
+)
+
+rem ---------------------------------------------------------------
+rem NETWORK GUARD
+rem A reboot normally tears down WinRE networking. If Internet already
+rem works, leave it alone. Otherwise initialize WinRE networking, renew
+rem DHCP, wait briefly, and retry before contacting GitHub.
+rem ---------------------------------------------------------------
+call :CHECKNET
+if not errorlevel 1 (
+  echo Internet: connected
+  goto :NETREADY
+)
+
+echo Internet: not detected - restoring WinRE networking...
+%WPEUTIL% InitializeNetwork >nul 2>&1
+if exist "%IPCONFIG%" "%IPCONFIG%" /renew >nul 2>&1
+%PING% -n 4 127.0.0.1 >nul 2>&1
+call :CHECKNET
+if not errorlevel 1 (
+  echo Internet: restored
+  goto :NETREADY
+)
+
+rem One bounded retry. Do not loop forever if DHCP/network hardware is down.
+echo Internet: first recovery attempt did not verify - retrying once...
+%WPEUTIL% InitializeNetwork >nul 2>&1
+if exist "%IPCONFIG%" "%IPCONFIG%" /renew >nul 2>&1
+%PING% -n 4 127.0.0.1 >nul 2>&1
+call :CHECKNET
+if not errorlevel 1 (
+  echo Internet: restored on retry
+  goto :NETREADY
+)
+
+echo Internet: probe still unavailable; trying GitHub transport directly.
+
+:NETREADY
 if exist "%TMP%" del /f /q "%TMP%" >nul 2>&1
 if exist "%OUT%" del /f /q "%OUT%" >nul 2>&1
 
-%WPEUTIL% InitializeNetwork >nul 2>&1
-
-rem First choice: GitHub REST Contents API using raw media type. This avoids
-rem dependence on the raw-content CDN cache. Public repository: no API key.
+rem First choice: GitHub REST Contents API using raw media type. Public repo,
+rem so no token or embedded secret is required.
 set "APIIP="
 call :RESOLVE %APIHOST% APIIP
 if defined APIIP (
-  "%CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 10 --max-time 120 --resolve "%APIHOST%:443:!APIIP!" -H "Accept: application/vnd.github.raw+json" -H "X-GitHub-Api-Version: 2026-03-10" -H "Cache-Control: no-cache, no-store" -H "Pragma: no-cache" "%APIURL%" -o "%TMP%"
+  "%CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 10 --max-time 120 --resolve "%APIHOST%:443:!APIIP!" -H "Accept: application/vnd.github.raw+json" -H "X-GitHub-Api-Version: 2026-03-10" -H "Cache-Control: no-cache, no-store, max-age=0" -H "Pragma: no-cache" "%APIURL%" -o "%TMP%"
   if not errorlevel 1 call :VALIDATE API
   if exist "%OUT%" goto :GOT
 )
 
-rem Second API attempt using normal DNS in case WinRE DNS is working now.
+rem Second API attempt using normal DNS if WinRE DNS is currently healthy.
 if exist "%TMP%" del /f /q "%TMP%" >nul 2>&1
-"%CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 10 --max-time 120 -H "Accept: application/vnd.github.raw+json" -H "X-GitHub-Api-Version: 2026-03-10" -H "Cache-Control: no-cache, no-store" -H "Pragma: no-cache" "%APIURL%" -o "%TMP%"
+"%CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 10 --max-time 120 -H "Accept: application/vnd.github.raw+json" -H "X-GitHub-Api-Version: 2026-03-10" -H "Cache-Control: no-cache, no-store, max-age=0" -H "Pragma: no-cache" "%APIURL%" -o "%TMP%"
 if not errorlevel 1 call :VALIDATE API-DNS
 if exist "%OUT%" goto :GOT
 
-rem Last resort: raw.githubusercontent.com with cache-buster and no-cache
-rem headers. Keep this only as a fallback transport.
+rem Last resort: raw.githubusercontent.com with known GitHub IPs.
 if exist "%TMP%" del /f /q "%TMP%" >nul 2>&1
 for %%I in (185.199.108.133 185.199.109.133 185.199.110.133 185.199.111.133) do (
-  "%CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 10 --max-time 120 --resolve "raw.githubusercontent.com:443:%%I" -H "Cache-Control: no-cache, no-store" -H "Pragma: no-cache" "%RAWURL%" -o "%TMP%"
+  "%CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 10 --max-time 120 --resolve "raw.githubusercontent.com:443:%%I" -H "Cache-Control: no-cache, no-store, max-age=0" -H "Pragma: no-cache" "%RAWURL%" -o "%TMP%"
   if not errorlevel 1 call :VALIDATE RAW
   if exist "%OUT%" goto :GOT
 )
 
 echo.
-echo WR FAILED: Could not obtain a valid latest command file from GitHub.
+echo WR FAILED: Internet/GitHub transport could not be restored.
+echo No repair command was executed.
 exit /b 90
 
 :GOT
@@ -59,6 +105,14 @@ for /f "tokens=2 delims==" %%V in ('%FINDSTR% /b /c:"set \"COMMAND_VERSION=" "%O
 if defined FETCHEDVER echo Command:   !FETCHEDVER!
 call "%OUT%"
 exit /b %errorlevel%
+
+:CHECKNET
+rem Use two public IP probes so broken DNS does not look like lost Internet.
+%PING% -n 1 -w 2000 1.1.1.1 >nul 2>&1
+if not errorlevel 1 exit /b 0
+%PING% -n 1 -w 2000 8.8.8.8 >nul 2>&1
+if not errorlevel 1 exit /b 0
+exit /b 1
 
 :VALIDATE
 set "TRANSPORT=%~1"
