@@ -4,33 +4,54 @@ setlocal EnableExtensions EnableDelayedExpansion
 rem Persistent WinRE launcher.
 rem - Restores WinRE networking when needed.
 rem - Fetches next.cmd through GitHub Contents API first.
-rem - Keeps the private log token only on the local repair volume.
-rem - Uploads only files explicitly listed by next.cmd in the upload manifest.
-set "LAUNCHER_VERSION=WR-LAUNCHER-2026.08.14-0128-ET"
-set "BUILD_TIME=2026-08-14 01:28 ET"
+rem - Uses GitHub CLI device login for private diagnostic uploads.
+rem - Stores GitHub CLI auth only under C:\WinRERepair until revoked.
+rem - Uploads only files explicitly listed by next.cmd in the manifest.
+set "LAUNCHER_VERSION=WR-LAUNCHER-2026.08.14-0155-ET"
+set "BUILD_TIME=2026-08-14 01:55 ET"
 set "CURL=C:\Windows\System32\curl.exe"
 set "WPEUTIL=X:\Windows\System32\wpeutil.exe"
 set "IPCONFIG=X:\Windows\System32\ipconfig.exe"
 set "PING=X:\Windows\System32\ping.exe"
 set "NSLOOKUP=C:\Windows\System32\nslookup.exe"
 set "FINDSTR=C:\Windows\System32\findstr.exe"
+set "CERTUTIL=X:\Windows\System32\certutil.exe"
+if not exist "%CERTUTIL%" set "CERTUTIL=C:\Windows\System32\certutil.exe"
+set "TAR=X:\Windows\System32\tar.exe"
+if not exist "%TAR%" set "TAR=C:\Windows\System32\tar.exe"
 set "WORK=C:\WinRERepair"
-set "SECRETDIR=%WORK%\secrets"
-set "TOKENFILE=%SECRETDIR%\github-log-token.txt"
 set "MANIFEST=%WORK%\upload-manifest.txt"
 set "DNS=64.71.255.204"
 set "APIHOST=api.github.com"
 set "COMMAND_APIURL=https://api.github.com/repos/RennieBeekharry/winre-repair/contents/next.cmd?ref=main"
 set "RAWURL=https://raw.githubusercontent.com/RennieBeekharry/winre-repair/main/next.cmd?cb=%RANDOM%%RANDOM%%RANDOM%"
 set "LOG_REPO=RennieBeekharry/winre-repair-logs"
-set "LOG_REPO_API=https://api.github.com/repos/%LOG_REPO%"
 set "OUT=X:\next.cmd"
 set "TMP=X:\next.cmd.tmp"
 set "APIIP="
 set "LOGAUTH=0"
 set "UPLOAD_COUNT=0"
 
+rem GitHub CLI v2.97.0 is the current immutable release selected for this
+rem recovery session. The SHA-256 below is the digest published by GitHub for
+rem gh_2.97.0_windows_amd64.zip.
+set "GH_VERSION=2.97.0"
+set "GH_ZIP_NAME=gh_2.97.0_windows_amd64.zip"
+set "GH_SHA256=35d7fe05c4dd1411ffda1e73dfc7c6f44b75c936ca51fa6595c657fdc0350cec"
+set "GH_URL=https://github.com/cli/cli/releases/download/v2.97.0/%GH_ZIP_NAME%"
+set "GH_ROOT=%WORK%\github-cli"
+set "GH=%GH_ROOT%\gh.exe"
+set "GH_STAGE=%WORK%\gh-stage"
+set "GH_ZIP=%WORK%\%GH_ZIP_NAME%"
+set "GH_CONFIG_DIR=%WORK%\gh-config"
+set "GH_TELEMETRY=false"
+set "GH_NO_UPDATE_NOTIFIER=1"
+set "DO_NOT_TRACK=1"
+
 if not exist "%WORK%" md "%WORK%" >nul 2>&1
+
+rem Remove the abandoned PAT file if an earlier attempt left one behind.
+if exist "%WORK%\secrets\github-log-token.txt" del /f /q "%WORK%\secrets\github-log-token.txt" >nul 2>&1
 
 echo ================================================================
 echo WINRE-REPAIR LAUNCHER
@@ -76,9 +97,6 @@ echo Internet: probe still unavailable; trying GitHub transport directly.
 
 :NETREADY
 call :RESOLVE %APIHOST% APIIP
-
-rem One-time setup mode used by the bootstrap command after this launcher is
-rem first installed. It uploads already-collected diagnostic evidence only.
 if /i "%~1"=="/setup-logs" goto :SETUPLOGS
 
 rem ---------------------------------------------------------------
@@ -121,14 +139,11 @@ set "WR_RUN_ID=!RUNID!"
 set "WR_UPLOAD_MANIFEST=%MANIFEST%"
 >"%MANIFEST%" type nul
 
-rem Log authorization is independent of the repair itself. A missing/expired
-rem token disables upload but never blocks the repair command.
 call :ENSURE_LOG_AUTH
 if not "!LOGAUTH!"=="1" echo Private log upload: unavailable for this run
 
 call "%OUT%"
 set "COMMAND_RC=!errorlevel!"
-
 if "!LOGAUTH!"=="1" call :UPLOAD_MANIFEST
 
 echo.
@@ -157,8 +172,7 @@ if not "%~6"=="" if exist "%~6" >>"%MANIFEST%" echo %~6
 call :ENSURE_LOG_AUTH
 if not "!LOGAUTH!"=="1" (
   echo.
-  echo PRIVATE LOG SETUP FAILED: token could not be validated.
-  echo No token was uploaded or written to GitHub.
+  echo PRIVATE LOG SETUP FAILED: GitHub device authorization did not complete.
   exit /b 95
 )
 call :UPLOAD_MANIFEST
@@ -173,91 +187,165 @@ echo ================================================================
 echo PRIVATE LOG CHANNEL READY
 echo Uploaded files: !UPLOAD_COUNT!
 echo Run ID: !WR_RUN_ID!
-echo Token location: %TOKENFILE%
-echo The token itself was NOT uploaded or logged.
+echo GitHub CLI auth is stored locally under: %GH_CONFIG_DIR%
+echo Revoke/logout after recovery is complete.
 echo ================================================================
 exit /b 0
 
 rem ---------------------------------------------------------------
-rem TOKEN SETUP / VALIDATION
+rem GITHUB CLI + DEVICE AUTHORIZATION
 rem ---------------------------------------------------------------
 :ENSURE_LOG_AUTH
 set "LOGAUTH=0"
-set "GHTOKEN="
-set "TOKEN_NEW=0"
-if not exist "%SECRETDIR%" md "%SECRETDIR%" >nul 2>&1
+call :ENSURE_GH
+if errorlevel 1 exit /b 1
+call :PREP_GH_HOSTS
 
-if exist "%TOKENFILE%" (
-  set /p "GHTOKEN="<"%TOKENFILE%"
-) else (
+"%GH%" auth status --hostname github.com >nul 2>&1
+if errorlevel 1 (
   echo.
   echo ================================================================
-  echo ONE-TIME PRIVATE LOG AUTHORIZATION
-  echo Paste the fine-grained GitHub token you created, then press ENTER.
-  echo It is saved ONLY to this PC at:
-  echo %TOKENFILE%
+  echo ONE-TIME GITHUB DEVICE LOGIN
+  echo No long token is required.
   echo.
-  echo IMPORTANT: the characters will be visible briefly while pasted.
-  echo They are not written to the diagnostic log or GitHub repository.
+  echo GitHub CLI will display a SHORT one-time code.
+  echo On your phone open:
+  echo   https://github.com/login/device
+  echo Enter the code shown here and approve GitHub CLI access.
+  echo Keep this command window open while you approve it.
   echo ================================================================
-  set /p "GHTOKEN=Token: "
-  set "TOKEN_NEW=1"
-  if not defined GHTOKEN (
-    cls
-    echo No token was entered. Private log upload disabled.
+  echo.
+  "%GH%" auth login --hostname github.com --git-protocol https --web --insecure-storage --skip-ssh-key --scopes repo
+  if errorlevel 1 (
+    echo GitHub device login did not complete.
     exit /b 1
   )
-  >"%TOKENFILE%" echo(!GHTOKEN!
-  attrib +h "%TOKENFILE%" >nul 2>&1
-  cls
-  echo WINRE-REPAIR: validating private log authorization...
 )
 
-if not defined GHTOKEN exit /b 1
-if not defined APIIP call :RESOLVE %APIHOST% APIIP
-set "AUTHRESP=%WORK%\github-log-auth-response.json"
-set "AUTHHTTP=%WORK%\github-log-auth-http.txt"
-if exist "%AUTHRESP%" del /f /q "%AUTHRESP%" >nul 2>&1
-if exist "%AUTHHTTP%" del /f /q "%AUTHHTTP%" >nul 2>&1
+"%GH%" api "repos/%LOG_REPO%" --silent >nul 2>&1
+if errorlevel 1 (
+  echo GitHub login succeeded, but the private log repository is not accessible.
+  exit /b 1
+)
+if exist "%GH_CONFIG_DIR%" attrib +h "%GH_CONFIG_DIR%" >nul 2>&1
+set "LOGAUTH=1"
+echo Private log authorization: verified through GitHub device login
+exit /b 0
 
-if defined APIIP (
-  "%CURL%" --ssl-no-revoke --silent --location --connect-timeout 10 --max-time 60 --resolve "%APIHOST%:443:!APIIP!" -H "Accept: application/vnd.github+json" -H "Authorization: Bearer !GHTOKEN!" -H "X-GitHub-Api-Version: 2026-03-10" -o "%AUTHRESP%" -w "%%{http_code}" "%LOG_REPO_API%" >"%AUTHHTTP%" 2>nul
+:ENSURE_GH
+if exist "%GH%" (
+  "%GH%" --version >nul 2>&1
+  if not errorlevel 1 exit /b 0
+)
+if not exist "%CERTUTIL%" (
+  echo GitHub CLI setup failed: certutil.exe is unavailable.
+  exit /b 1
+)
+if not exist "%TAR%" (
+  echo GitHub CLI setup failed: tar.exe is unavailable.
+  exit /b 1
+)
+
+echo Installing verified portable GitHub CLI %GH_VERSION% for device login...
+if exist "%GH_ZIP%" del /f /q "%GH_ZIP%" >nul 2>&1
+call :DOWNLOAD_GH_ZIP
+if errorlevel 1 (
+  echo GitHub CLI download failed.
+  exit /b 1
+)
+
+"%CERTUTIL%" -hashfile "%GH_ZIP%" SHA256 | %FINDSTR% /i /c:"%GH_SHA256%" >nul 2>&1
+if errorlevel 1 (
+  echo GitHub CLI SHA-256 validation FAILED. File will not be executed.
+  del /f /q "%GH_ZIP%" >nul 2>&1
+  exit /b 1
+)
+echo GitHub CLI SHA-256: verified
+
+if exist "%GH_STAGE%" rmdir /s /q "%GH_STAGE%" >nul 2>&1
+md "%GH_STAGE%" >nul 2>&1
+"%TAR%" -xf "%GH_ZIP%" -C "%GH_STAGE%" >nul 2>&1
+if errorlevel 1 (
+  echo GitHub CLI extraction failed.
+  exit /b 1
+)
+set "FOUND_GH="
+for /r "%GH_STAGE%" %%F in (gh.exe) do if not defined FOUND_GH set "FOUND_GH=%%F"
+if not defined FOUND_GH (
+  echo GitHub CLI archive did not contain gh.exe.
+  exit /b 1
+)
+if not exist "%GH_ROOT%" md "%GH_ROOT%" >nul 2>&1
+copy /y "!FOUND_GH!" "%GH%" >nul 2>&1
+if not exist "%GH%" (
+  echo GitHub CLI installation failed.
+  exit /b 1
+)
+rmdir /s /q "%GH_STAGE%" >nul 2>&1
+del /f /q "%GH_ZIP%" >nul 2>&1
+"%GH%" --version
+if errorlevel 1 exit /b 1
+exit /b 0
+
+:DOWNLOAD_GH_ZIP
+set "GH_HEADERS=%WORK%\gh-release-headers.txt"
+set "GH_REDIRECT="
+set "GH_WEBIP="
+set "GH_ASSET_HOST="
+set "GH_ASSET_IP="
+if exist "%GH_HEADERS%" del /f /q "%GH_HEADERS%" >nul 2>&1
+call :RESOLVE github.com GH_WEBIP
+if defined GH_WEBIP (
+  "%CURL%" --ssl-no-revoke --fail --silent --show-error --connect-timeout 10 --max-time 60 --resolve "github.com:443:!GH_WEBIP!" -D "%GH_HEADERS%" -o NUL "%GH_URL%" >nul 2>&1
+  for /f "tokens=1,*" %%A in ('%FINDSTR% /b /i /c:"location:" "%GH_HEADERS%" 2^>nul') do if not defined GH_REDIRECT set "GH_REDIRECT=%%B"
+)
+if defined GH_REDIRECT (
+  for /f "tokens=2 delims=/" %%H in ("!GH_REDIRECT!") do set "GH_ASSET_HOST=%%H"
+  if defined GH_ASSET_HOST call :RESOLVE !GH_ASSET_HOST! GH_ASSET_IP
+  if defined GH_ASSET_IP (
+    "%CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 15 --max-time 600 --resolve "!GH_ASSET_HOST!:443:!GH_ASSET_IP!" "!GH_REDIRECT!" -o "%GH_ZIP%"
+    if not errorlevel 1 goto :GH_DOWNLOAD_OK
+  )
+)
+
+rem Normal DNS fallback if the explicit redirect path was unavailable.
+"%CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 15 --max-time 600 "%GH_URL%" -o "%GH_ZIP%"
+if errorlevel 1 exit /b 1
+
+:GH_DOWNLOAD_OK
+for %%Z in ("%GH_ZIP%") do if %%~zZ LSS 10000000 exit /b 1
+exit /b 0
+
+rem Pin github.com and api.github.com only inside the current WinRE RAM disk.
+rem This makes GitHub CLI resilient when WinRE DHCP works but DNS does not.
+:PREP_GH_HOSTS
+set "HOSTS=X:\Windows\System32\drivers\etc\hosts"
+set "HOSTSTMP=%WORK%\hosts.wr.tmp"
+set "WEBIP="
+set "RESTIP="
+call :RESOLVE github.com WEBIP
+call :RESOLVE api.github.com RESTIP
+if not defined WEBIP exit /b 0
+if not defined RESTIP exit /b 0
+if exist "%HOSTS%" (
+  %FINDSTR% /v /c:"# WR-GH" "%HOSTS%" >"%HOSTSTMP%" 2>nul
 ) else (
-  "%CURL%" --ssl-no-revoke --silent --location --connect-timeout 10 --max-time 60 -H "Accept: application/vnd.github+json" -H "Authorization: Bearer !GHTOKEN!" -H "X-GitHub-Api-Version: 2026-03-10" -o "%AUTHRESP%" -w "%%{http_code}" "%LOG_REPO_API%" >"%AUTHHTTP%" 2>nul
+  >"%HOSTSTMP%" type nul
 )
-set "AUTHCODE="
-if exist "%AUTHHTTP%" set /p "AUTHCODE="<"%AUTHHTTP%"
-if "%AUTHCODE%"=="200" (
-  set "LOGAUTH=1"
-  echo Private log authorization: verified
-  del /f /q "%AUTHRESP%" "%AUTHHTTP%" >nul 2>&1
-  exit /b 0
-)
-
-echo Private log authorization failed. GitHub HTTP: %AUTHCODE%
-if "%TOKEN_NEW%"=="1" (
-  del /f /q "%TOKENFILE%" >nul 2>&1
-  echo The unverified token file was removed.
-)
-set "GHTOKEN="
-del /f /q "%AUTHRESP%" "%AUTHHTTP%" >nul 2>&1
-exit /b 1
+>>"%HOSTSTMP%" echo !WEBIP! github.com # WR-GH
+>>"%HOSTSTMP%" echo !RESTIP! api.github.com # WR-GH
+copy /y "%HOSTSTMP%" "%HOSTS%" >nul 2>&1
+del /f /q "%HOSTSTMP%" >nul 2>&1
+exit /b 0
 
 rem ---------------------------------------------------------------
-rem UPLOAD MANIFEST TO PRIVATE REPOSITORY
-rem GitHub Contents API requires base64. certutil creates the base64 locally;
-rem the token never becomes part of the payload or committed content.
+rem UPLOAD MANIFEST TO PRIVATE REPOSITORY USING gh api
 rem ---------------------------------------------------------------
 :UPLOAD_MANIFEST
 set "UPLOAD_COUNT=0"
 if not exist "%MANIFEST%" exit /b 0
 if not "!LOGAUTH!"=="1" exit /b 0
-set "CERTUTIL=X:\Windows\System32\certutil.exe"
-if not exist "!CERTUTIL!" set "CERTUTIL=C:\Windows\System32\certutil.exe"
-if not exist "!CERTUTIL!" (
-  echo Private log upload skipped: certutil.exe is unavailable.
-  exit /b 1
-)
+if not exist "%CERTUTIL%" exit /b 1
 for /f "usebackq delims=" %%F in ("%MANIFEST%") do (
   if exist "%%F" call :UPLOAD_FILE "%%F"
 )
@@ -270,11 +358,9 @@ set "UPLOADNAME=!UPLOADNAME: =_!"
 set "REMOTE_PATH=runs/!WR_RUN_ID!/!UPLOADNAME!"
 set "B64=%WORK%\wr-upload.b64"
 set "PAYLOAD=%WORK%\wr-upload.json"
-set "UPRESP=%WORK%\wr-upload-response.json"
-set "UPHTTP=%WORK%\wr-upload-http.txt"
-for %%T in ("!B64!" "!PAYLOAD!" "!UPRESP!" "!UPHTTP!") do if exist %%T del /f /q %%T >nul 2>&1
+for %%T in ("!B64!" "!PAYLOAD!") do if exist %%T del /f /q %%T >nul 2>&1
 
-"!CERTUTIL!" -f -encode "!UPLOADFILE!" "!B64!" >nul 2>&1
+"%CERTUTIL%" -f -encode "!UPLOADFILE!" "!B64!" >nul 2>&1
 if errorlevel 1 (
   echo LOG UPLOAD FAILED: could not encode !UPLOADNAME!
   exit /b 1
@@ -286,33 +372,25 @@ for /f "usebackq skip=1 delims=" %%L in ("!B64!") do (
 )
 >>"!PAYLOAD!" echo ^",^"branch^":^"main^"}
 
-set "UPLOAD_URL=https://api.github.com/repos/%LOG_REPO%/contents/!REMOTE_PATH!"
-if defined APIIP (
-  "%CURL%" --ssl-no-revoke --silent --location --connect-timeout 10 --max-time 180 --resolve "%APIHOST%:443:!APIIP!" -X PUT -H "Accept: application/vnd.github+json" -H "Authorization: Bearer !GHTOKEN!" -H "X-GitHub-Api-Version: 2026-03-10" -H "Content-Type: application/json" --data-binary "@!PAYLOAD!" -o "!UPRESP!" -w "%%{http_code}" "!UPLOAD_URL!" >"!UPHTTP!" 2>nul
+"%GH%" api --method PUT "repos/%LOG_REPO%/contents/!REMOTE_PATH!" --input "!PAYLOAD!" --silent >nul 2>&1
+if errorlevel 1 (
+  echo LOG UPLOAD FAILED: !UPLOADNAME!
 ) else (
-  "%CURL%" --ssl-no-revoke --silent --location --connect-timeout 10 --max-time 180 -X PUT -H "Accept: application/vnd.github+json" -H "Authorization: Bearer !GHTOKEN!" -H "X-GitHub-Api-Version: 2026-03-10" -H "Content-Type: application/json" --data-binary "@!PAYLOAD!" -o "!UPRESP!" -w "%%{http_code}" "!UPLOAD_URL!" >"!UPHTTP!" 2>nul
-)
-set "UPCODE="
-if exist "!UPHTTP!" set /p "UPCODE="<"!UPHTTP!"
-if "!UPCODE!"=="201" (
   set /a UPLOAD_COUNT+=1
   echo LOG UPLOADED: !REMOTE_PATH!
-) else if "!UPCODE!"=="200" (
-  set /a UPLOAD_COUNT+=1
-  echo LOG UPDATED: !REMOTE_PATH!
-) else (
-  echo LOG UPLOAD FAILED: !UPLOADNAME! - GitHub HTTP !UPCODE!
 )
-for %%T in ("!B64!" "!PAYLOAD!" "!UPRESP!" "!UPHTTP!") do if exist %%T del /f /q %%T >nul 2>&1
+del /f /q "!B64!" "!PAYLOAD!" >nul 2>&1
 exit /b 0
 
 :MAKE_RUN_ID
-set "RID_DATE=%date:/=-%"
-set "RID_DATE=!RID_DATE: =_!"
-set "RID_TIME=%time::=-%"
-set "RID_TIME=!RID_TIME: =0!"
-set "RID_TIME=!RID_TIME:.=-!"
-set "RUNID=!RID_DATE!_!RID_TIME!_%RANDOM%"
+set "RUNID=WR-%RANDOM%-%RANDOM%"
+set "TODAY=%date%"
+set "NOW=%time: =0%"
+set "NOW=!NOW::=!"
+set "NOW=!NOW:.=!"
+for /f "tokens=1-4 delims=/ " %%A in ("%date%") do (
+  if not "%%D"=="" set "RUNID=WR-%%D%%B%%C-!NOW!"
+)
 exit /b 0
 
 :CHECKNET
@@ -325,7 +403,7 @@ exit /b 1
 :VALIDATE
 set "TRANSPORT=%~1"
 if not exist "%TMP%" exit /b 1
-for %%Z in ("%TMP%") do if %%~zZ LSS 1024 exit /b 1
+for %%Z in ("%TMP%") do if %%~zZ LSS 512 exit /b 1
 %FINDSTR% /b /l /c:"@echo off" "%TMP%" >nul 2>&1
 if errorlevel 1 exit /b 1
 %FINDSTR% /l /c:"COMMAND_VERSION=WR-" "%TMP%" >nul 2>&1
