@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-rem WR-MODULE: ui 2026.08.14-1518-ET
+rem WR-MODULE: ui 2026.08.14-1540-ET
 rem RescueMeAI WinRE console renderer v2.
 rem Keep live recovery screens simple, stable, and operator-readable.
 
@@ -102,9 +102,14 @@ if /i not "%R_EVIDENCE%"=="None." (
   echo   %R_EVIDENCE%
   echo.
 )
-echo AGENT STATE
-echo   RescueMeAI is still running unless this screen explicitly says APP_FATAL or STOPPED.
-echo   While WAITING, press S to stop safely.
+echo WHAT HAPPENS NEXT
+echo   RescueMeAI is still running.
+echo   PLEASE WAIT - no action is required from you right now.
+echo   RescueMeAI will continue automatically when the next recovery step is ready.
+echo.
+echo SAFE STOP
+echo   Only while the screen says WAITING, press S once to stop RescueMeAI safely.
+echo   Do not close the window or press Ctrl+C while a recovery command is running.
 echo.
 echo %RMAI_UI_BORDER%
 exit /b 0
