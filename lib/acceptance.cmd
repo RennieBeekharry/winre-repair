@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-rem WR-MODULE: acceptance 2026.08.14-1310-ET
+rem WR-MODULE: acceptance 2026.08.14-1325-ET
 
 if /i "%~1"=="check" goto :CHECK
 if /i "%~1"=="show" goto :SHOW
@@ -51,7 +51,6 @@ if exist "%UI%" (
   call "%UI%" section INSTRUCTION "ACTION REQUIRED"
   call "%UI%" wrap INSTRUCTION "Type VIEW to display the local Terms of Use. Type exactly ACCEPT to agree and continue. Anything else stops RescueMeAI safely."
   echo.
-  call "%UI%" line PROMPT "ACCEPT TERMS OF USE"
 ) else (
   cls
   echo RescueMeAI - Terms and Recovery Risk Acceptance
