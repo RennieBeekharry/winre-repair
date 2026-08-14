@@ -1,6 +1,5 @@
 @echo off
-setlocal EnableExtensions EnableDelayedExpansion
-rem WR-MODULE: network 2026.08.14-1057-ET
+rem WR-MODULE: network 2026.08.14-1118-ET
 if /i "%~1"=="ensure" goto :ENSURE
 if /i "%~1"=="fetch" goto :FETCH
 exit /b 64
@@ -29,10 +28,13 @@ if not exist "%WR_NET_CURL%" exit /b 91
 if exist "%WR_NET_OUT%" del /f /q "%WR_NET_OUT%" >nul 2>&1
 
 echo(%WR_NET_URL%| "%WR_NET_FINDSTR%" /i /c:"https://api.github.com/" >nul 2>&1
-if not errorlevel 1 set "WR_NET_HOST=api.github.com"
+if not errorlevel 1 (
+  set "WR_NET_HOST=api.github.com"
+  if defined APIIP set "WR_NET_IP=%APIIP%"
+)
 echo(%WR_NET_URL%| "%WR_NET_FINDSTR%" /i /c:"https://github.com/" >nul 2>&1
 if not errorlevel 1 set "WR_NET_HOST=github.com"
-if defined WR_NET_HOST call :RESOLVE
+if defined WR_NET_HOST if not defined WR_NET_IP call :RESOLVE
 
 if defined WR_NET_IP (
   "%WR_NET_CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --resolve "%WR_NET_HOST%:443:%WR_NET_IP%" -H "Accept: application/vnd.github.raw+json" -H "Cache-Control: no-cache, no-store, max-age=0" "%WR_NET_URL%" -o "%WR_NET_OUT%"
