@@ -1,101 +1,122 @@
-# Windows Recovery Manifest
+# AI Recovery Public Project Manifest
 
-Last updated: 2026-08-14 09:29 ET
+Last updated: 2026-08-14 10:50 ET
 
-## Current failure
+This public repository contains reusable AI Recovery code, safety policy, command protocols, templates, and sanitized examples. Machine-specific recovery history, private reports, identifiers, and credentials belong only in the user's configured private evidence/control backend.
 
-- Primary boot failure: `INACCESSIBLE_BOOT_DEVICE (0x7B)`.
-- Offline Windows: Windows 11 Home/Core 24H2 x64.
-- Current offline build after servicing work: 26100.9168.
-- Internal storage controller: Intel 100 Series/C230 Chipset Family SATA AHCI Controller, `PCI\VEN_8086&DEV_A102`.
-- Current controller service binding after rollback: `iaStorA`.
+## Public user result protocol
 
-## Current hardware/storage evidence
+Every recovery action must end with exactly one state:
 
-- Internal HDD remains online and readable from WinRE.
-- Direct binary reads of `ntoskrnl.exe`, `disk.sys`, and the offline SYSTEM hive passed.
-- NTFS dirty bit: clean.
-- Read-only CHKDSK: clean.
-- SMART / PhysicalDisk health were unavailable in the current WinRE environment, not failed.
-- Current assessment: no obvious drive failure; hardware failure remains possible but is not presently the leading explanation.
+- `[PASS]` — green — successful completion. User reply word: `pass`.
+- `[FAIL]` — red — a required step failed or execution stopped fail-closed. User reply word: `fail`.
+- `[WARNING]` — amber/yellow — partial completion, interrupted state, denied local approval, or review required. User reply word: `warning`.
 
-## Attempts already performed
+Every final result screen must clearly show:
 
-| Status | Attempt | Result / evidence | Repeat? |
-|---|---|---|---|
-| PASS | Hardware safety/readability triage | Disk online, Windows volume readable, boot-critical files readable, CHKDSK clean | Only if new hardware evidence appears |
-| PASS | Offline Windows servicing/update repair | KB5121003 installed offline; Windows now reports build 26100.9168 | Do not repeat unless servicing evidence changes |
-| FAIL | Prior storage-service / ReadyBoost / filter / controlled iaStorA experiments | Did not resolve 0x7B | Do not repeat unchanged |
-| PASS | Intel HDC 16.7.1.1012 package acquisition and validation | Microsoft Catalog package validated for DEV_A102 / AMD64 | No need to reacquire unless package is damaged |
-| PASS | Intel 16.7.1.1012 offline driver staging | DISM successfully added the signed package; `iaStorAC.sys` present; metadata matched DEV_A102 | Do not restage unchanged |
-| FAIL | Reversible controller binding test `iaStorA -> iaStorAC` | Binding applied and verified, but reboot still produced 0x7B | Do not repeat unchanged |
-| PASS | Binding rollback | Controller restored to `iaStorA` | Current baseline |
-| PASS | USB identity verification | USB positively identified separately from Windows disk | Completed |
-| PASS | USB media layout/format | `WIN11MEDIA` FAT32 boot partition + `REPAIRDATA` NTFS data partition created successfully; Windows disk not targeted | COMPLETE; no further disk formatting/cleaning code allowed in active workflow |
-| FAIL | UUP website `get.php?...&aria2=2` manifest retrieval | Interactive website endpoint did not return the assumed aria2 manifest | Do not repeat; wrong automation endpoint |
-| FAIL | GitHub-API helper acquisition in build 0907 | Recovery downloader helper could not be obtained in WinRE; no disk/filesystem operation occurred | Do not repeat unchanged |
-| FAIL | Raw/local helper acquisition in build 0915 | Static helper still could not be validated after local reuse/raw fallback; no disk/filesystem operation occurred | Do not repeat unchanged |
+1. `RESULT` — plain-language outcome.
+2. `WHAT YOU SHOULD DO` — exact reply word (`pass`, `fail`, or `warning`).
+3. `ADDITIONAL INFORMATION REQUIRED` — explicitly `None`, `paste ...`, or `screenshot ...`.
+4. `ADDITIONAL INSTRUCTIONS` — any other required user action.
 
-## Current recovery USB state
+If the private evidence channel works, screenshots should normally not be required. If private upload fails, the program must explicitly request paste/screenshot evidence.
 
-- `WIN11MEDIA`: FAT32, approximately 8 GB, reserved for bootable recovery/setup files.
-- `REPAIRDATA`: NTFS, remaining USB capacity, reserved for Windows source files, tools, and recovery evidence.
-- Active workflow policy: **no disk clean, format, repartition, filesystem creation, or disk-number write operations**.
+## Modular runtime
 
-## Universal result/reporting protocol
+Reusable responsibilities are separated from current recovery actions:
 
-Every recovery run must end in exactly one overall state:
+- `lib/ui.cmd` — headers, colors, result presentation and user instructions.
+- `lib/network.cmd` — WinRE networking and HTTP retrieval.
+- `lib/reporting.cmd` — machine-readable local/USB result evidence.
+- `lib/github-auth.cmd` + `lib/github-auth.js` — configurable GitHub authorization/reporting transport.
+- `lib/safety.cmd` — authoritative local risk classification and destructive-action approval gate.
+- `lib/agent-core.js` — validates private queued commands; never executes arbitrary shell text.
+- `lib/runtime-sync.cmd` — synchronizes and validates reusable runtime modules.
+- `wr-agent.cmd` — long-running WinRE command listener/orchestrator.
+- `next.cmd` — current recovery action/orchestration only; reusable framework logic should not accumulate here.
 
-- `[PASS]` — green — run completed successfully; manual reply word: `pass`.
-- `[FAIL]` — red — a required step failed or the run stopped unsafely; manual reply word: `fail`.
-- `[WARNING]` — amber/yellow in the WinRE console — run partially completed, paused safely, or found a condition requiring review; manual reply word: `warning`.
+## Command-agent protocol
 
-WinRE's standard console palette does not provide a reliable true orange, so amber/yellow is the approved warning color fallback.
+The command transport is intentionally **not an unrestricted remote shell**.
 
-The persistent launcher writes a compact machine-readable `LAST_RUN_REPORT.txt` after every run with at least:
+Protocol v1 supports only these allowlisted actions:
 
-- `status=PASS|FAIL|WARNING`
-- return code
-- launcher version
-- recovery command version
-- date/time
-- concise status message
+- `RUN_NEXT`
+- `PING`
+- `STOP_AGENT`
 
-The report is stored at `C:\WinRERepair\LAST_RUN_REPORT.txt` and copied to `REPAIRDATA\RecoverySource\LAST_RUN_REPORT.txt` when that USB volume is available.
+A `RUN_NEXT` request must provide:
 
-A transition command (`WR-2026.08.14-0928-ET`) upgrades the persistent local `C:\wr.cmd` launcher to the universal result protocol while executing the immutable 0918 embedded UUP-download recovery logic.
+- unique increasing numeric `command_id`;
+- exact target agent ID or wildcard only for non-destructive actions;
+- risk classification (`READ_ONLY`, `REPAIR_WRITE`, or `DESTRUCTIVE`);
+- immutable 40-character Git commit SHA;
+- repository + file path;
+- SHA-256 of the exact recovery command;
+- issue/expiry timestamps.
 
-## Private GitHub report channel
+The agent validates this metadata before any action is considered.
 
-- ChatGPT can read the private repository `RennieBeekharry/winre-repair-logs` through the connected GitHub integration.
-- The remaining unsolved piece is secure authentication from WinRE to that private repository.
-- Until that one-time machine authentication is solved, the compact report is retained locally and on `REPAIRDATA`.
-- Do not embed a long-lived GitHub personal access token in source code or upload it to any repository.
+## Destructive-action boundary
 
-## Next planned actions
+Destructive operations are never authorized solely by GitHub, AI output, or a remote queue.
 
-1. Run transition build `WR-2026.08.14-0928-ET` to execute the immutable embedded-helper UUP download logic and permanently install the PASS/FAIL/WARNING launcher.
-2. Use the official UUP dump JSON API at `api.uupdump.net/get.php` for Windows 11 24H2 build 26100.8894, x64, Home/Core, en-US.
-3. Validate API response build = 26100.8894, architecture = amd64, and presence of a file list before downloading any source file.
-4. Download UUP files only to `REPAIRDATA` and verify each file against the API-provided SHA-1.
-5. Make downloads resumable/restartable; already-verified files must be reused on later runs.
-6. Convert the verified UUP set into usable Windows setup/recovery source files using Windows-compatible conversion tooling.
-7. Copy only required boot/setup files to `WIN11MEDIA`; keep oversized image payloads on `REPAIRDATA` if needed.
-8. Boot the fresh Microsoft-derived recovery environment and use it as a known-good repair source.
-9. From fresh recovery media, re-evaluate the storage stack and perform targeted repair only: DISM component repair/source validation, offline SFC, storage-driver comparison, and BCDBoot refresh if evidence supports it.
-10. Escalate to reset/reinstall only after targeted recovery-source repair is exhausted and only with explicit approval.
+Local safety policy is authoritative and may increase risk but never decrease it. The immutable command script is scanned locally for high-impact operations. If local scanning discovers destructive behavior that remote/script metadata classified lower, execution fails closed.
 
-## Explicit do-not-repeat / do-not-do list
+A destructive command must:
 
-- Do not repeat the failed `iaStorA -> iaStorAC` binding test unchanged.
-- Do not repeat prior ReadyBoost/storage-service/filter experiments unchanged.
-- Do not use the UUP website aria2 endpoint as an automated manifest API.
-- Do not retry separate GitHub helper acquisition as part of the download stage; the helper is embedded locally now.
-- Do not run disk clean, format, repartition, or filesystem-creation commands in the active recovery workflow.
-- Do not erase or reinstall Windows as part of the current targeted recovery phase.
-- Do not use unsigned storage drivers or `/ForceUnsigned`.
-- Do not change BIOS storage mode automatically.
+- be classified `DESTRUCTIVE` by both the queue and command metadata;
+- target the exact local agent ID (no wildcard);
+- declare local approval required;
+- clearly display action, exact target, consequence/risk, and rollback limitations;
+- require a one-time phrase containing the command ID and local agent suffix typed at the physical/recovery console;
+- journal that local authorization before execution.
 
-## Recovery workflow principle
+Examples of actions that must remain behind this boundary include disk formatting/cleaning, destructive partition operations, image application/reinstallation, reset, destructive BCD/registry deletion, secure erase/wipe operations, and comparable high-impact changes.
 
-Use least-destructive, evidence-driven actions first. Every write to the offline Windows installation should have a defined target, validation gate, and rollback/evidence path. The user-facing result should be reducible to PASS, FAIL, or WARNING, while the detailed evidence is preserved in machine-readable reports and the recovery manifest.
+## Replay and interruption protection
+
+Before a queued action executes, its command ID is written to an in-flight journal. Both completed and in-flight IDs are considered handled for replay prevention.
+
+If WinRE crashes or the machine reboots with an in-flight action, the agent must **not silently replay it**. The next start returns `WARNING` and requires review of the interrupted state.
+
+## Public/private data boundary
+
+Public repository:
+
+- reusable code;
+- safety rules;
+- protocols;
+- configuration templates;
+- sanitized examples;
+- public documentation.
+
+Private/user-controlled backend:
+
+- recovery history;
+- detailed diagnostic reports;
+- agent IDs and active command queue;
+- machine-specific state;
+- private source metadata where appropriate;
+- authorization material.
+
+Never commit user credentials or machine-private evidence to this public repository.
+
+## Authentication release requirement
+
+The public product must use a first-party AI Recovery GitHub OAuth App/GitHub App or another first-party backend authentication mechanism. Repository/user identity and OAuth client identity are configuration, not hard-coded application state.
+
+`config/agent.example.cfg` documents the configuration contract. Development authentication identities must not be shipped as the final public identity.
+
+## Recovery principles
+
+1. Prefer the least destructive valid action first.
+2. Separate diagnosis from repair where practical.
+3. Validate target, applicability, integrity, and rollback/evidence path before writes.
+4. Never let remote automation bypass destructive local approval.
+5. Do not silently repeat failed or interrupted high-impact actions.
+6. Preserve machine-readable evidence for every run.
+7. Tell the user exactly what result occurred and exactly what they should do next.
+8. Keep `next.cmd` small; shared functionality belongs in modules.
+9. Treat malformed, stale, expired, out-of-order, or integrity-failed commands as fail-closed.
+10. Reset/reinstall/erase paths remain last-resort operations requiring explicit local authorization.
