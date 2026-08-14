@@ -1,15 +1,18 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-set "LAUNCHER_VERSION=RMAI-LAUNCHER-2026.08.14-1235-ET"
+set "LAUNCHER_VERSION=RMAI-LAUNCHER-2026.08.14-1315-ET"
 set "PRODUCT=RescueMeAI"
 set "DESCRIPTION=AI-ASSISTED WINDOWS RECOVERY"
-set "LEGAL_URL=https://github.com/RennieBeekharry/winre-repair/blob/main/LEGAL.md"
+set "LEGAL_BASE=https://github.com/RennieBeekharry/winre-repair"
+set "LEGAL_FILE=LEGAL.md"
 set "CURL=C:\Windows\System32\curl.exe"
 set "WPEUTIL=X:\Windows\System32\wpeutil.exe"
 set "PING=X:\Windows\System32\ping.exe"
 set "NSLOOKUP=C:\Windows\System32\nslookup.exe"
 set "FINDSTR=C:\Windows\System32\findstr.exe"
+set "MODE=C:\Windows\System32\mode.com"
+if not exist "%MODE%" set "MODE=mode"
 set "DNS=64.71.255.204"
 set "APIHOST=api.github.com"
 set "URL=https://api.github.com/repos/RennieBeekharry/winre-repair/contents/next.cmd?ref=main"
@@ -19,12 +22,17 @@ set "WORK=C:\WinRERepair"
 set "REPORT=%WORK%\LAST_RUN_REPORT.txt"
 set "INTERNET_STATUS=CHECKING"
 set "APIIP="
+set "UI_WIDTH=96"
+set "UI_BORDER================================================================================================="
+set "UI_RULE=------------------------------------------------------------------------------------------------"
+set "UI_SPACES=                                                                                                    "
+set "UI_TMP=%TEMP%\rmai-launch-ui-%RANDOM%%RANDOM%.txt"
 
 if not exist "%WORK%" md "%WORK%" >nul 2>&1
-
-call :HEADER 0B "STARTING RESCUEMEAI" "READ ONLY"
-echo.
-echo [INFO] Checking the recovery environment and Internet connection...
+call :UI_SETUP
+call :UI_HEADER "STARTING RESCUEMEAI" "READ ONLY"
+call :UI_SECTION INFO "STARTUP"
+call :UI_WRAP INFO "Checking the recovery environment and Internet connection."
 
 if not exist "%CURL%" (
   set "FAIL_RC=91"
@@ -44,8 +52,6 @@ if exist "%PING%" (
 
 if exist "%TMP%" del /f /q "%TMP%" >nul 2>&1
 if exist "%OUT%" del /f /q "%OUT%" >nul 2>&1
-
-rem Preserve the recovery environment's currently proven resolver behavior.
 if exist "%NSLOOKUP%" call :RESOLVE %APIHOST% APIIP
 call :FETCHPUBLIC "%URL%" "%TMP%"
 if errorlevel 1 (
@@ -63,7 +69,6 @@ if errorlevel 1 (
   set "FAIL_REASON=The downloaded RescueMeAI workflow failed basic content validation."
   goto :LAUNCHER_FAIL
 )
-
 move /y "%TMP%" "%OUT%" >nul 2>&1
 if errorlevel 1 (
   set "INTERNET_STATUS=CONNECTED"
@@ -73,13 +78,12 @@ if errorlevel 1 (
 )
 
 set "INTERNET_STATUS=CONNECTED"
-call :HEADER 0B "LOADING CURRENT RECOVERY WORKFLOW" "READ ONLY"
-echo.
-echo [CONNECTED] Latest RescueMeAI workflow downloaded and validated.
-echo [INFO] Starting the recovery workflow now...
+call :UI_HEADER "LOADING CURRENT RECOVERY WORKFLOW" "READ ONLY"
+call :UI_SECTION PASS "[CONNECTED] CURRENT WORKFLOW READY"
+call :UI_WRAP PASS "The latest RescueMeAI recovery workflow was downloaded and validated."
+call :UI_WRAP INSTRUCTION "Starting the recovery workflow now."
 
-rem The child workflow owns all normal PASS / FAIL / WARNING result UI.
-rem Avoid printing a second legacy launcher result over the workflow screen.
+rem The child workflow owns normal PASS / FAIL / WARNING result UI.
 call "%OUT%"
 set "RC=!errorlevel!"
 exit /b !RC!
@@ -92,21 +96,15 @@ exit /b !RC!
 >>"%REPORT%" echo date=%date%
 >>"%REPORT%" echo time=%time%
 >>"%REPORT%" echo message=!FAIL_REASON!
-call :HEADER 0C "LAUNCHER / UPDATE FAILURE" "NO RECOVERY ACTION"
-call :CENTER "[FAIL] RESCUEMEAI COULD NOT START"
-echo.
-echo RESULT
-echo ------------------------------------------------------------------------
-echo !FAIL_REASON!
-echo.
-echo WHAT YOU SHOULD DO
-echo   Reply to ChatGPT with exactly: fail
-echo.
-echo ADDITIONAL INFORMATION REQUIRED
-echo   Screenshot this screen if private reporting is not yet online.
-echo.
-echo Nothing destructive was attempted.
-echo ========================================================================
+call :UI_HEADER "LAUNCHER / UPDATE FAILURE" "NO RECOVERY ACTION"
+call :UI_SECTION ERROR "[FAIL] RESCUEMEAI COULD NOT START"
+call :UI_WRAP ERROR "!FAIL_REASON!"
+call :UI_SECTION INSTRUCTION "WHAT YOU SHOULD DO"
+call :UI_WRAP INSTRUCTION "Reply to ChatGPT with exactly: fail"
+call :UI_SECTION INFO "ADDITIONAL INFORMATION REQUIRED"
+call :UI_WRAP INFO "Screenshot this screen only if private reporting is not yet online."
+call :UI_WRAP WARNING "Nothing destructive was attempted."
+call :UI_LINE MUTED "%UI_BORDER%"
 pause >nul
 exit /b !FAIL_RC!
 
@@ -132,34 +130,98 @@ for /f "delims=" %%L in ('"%NSLOOKUP%" %~1 %DNS% 2^>nul ^| "%FINDSTR%" /R "[0-9]
 )
 exit /b 0
 
-:HEADER
-set "UI_COLOR=%~1"
-set "UI_STEP=%~2"
-set "UI_SAFETY=%~3"
-color %UI_COLOR% >nul 2>&1
-cls
-echo ========================================================================
-call :CENTER "RESCUEMEAI"
-call :CENTER "%DESCRIPTION%"
-echo ========================================================================
-echo  Version      : %LAUNCHER_VERSION%
-echo  Internet     : [%INTERNET_STATUS%]
-echo  Current Step : %UI_STEP%
-echo  Safety       : %UI_SAFETY%
-echo  Legal        : %LEGAL_URL%
-echo ========================================================================
+:UI_SETUP
+"%MODE%" con: cols=100 lines=50 >nul 2>&1
 exit /b 0
 
-:CENTER
-set "CENTER_TEXT=%~1"
-set /a CENTER_LEN=0
-:CENTER_LEN_LOOP
-if not "!CENTER_TEXT:~%CENTER_LEN%,1!"=="" (
-  set /a CENTER_LEN+=1
-  if !CENTER_LEN! LSS 72 goto :CENTER_LEN_LOOP
+:UI_HEADER
+set "UI_STEP=%~1"
+set "UI_SAFETY=%~2"
+cls
+call :UI_LINE HEADER "%UI_BORDER%"
+call :UI_CENTER HEADER "RESCUEMEAI"
+call :UI_CENTER HEADER "%DESCRIPTION%"
+call :UI_LINE HEADER "%UI_BORDER%"
+call :UI_LINE LABEL "Version      : %LAUNCHER_VERSION%"
+if /i "%INTERNET_STATUS%"=="CONNECTED" (
+  call :UI_LINE PASS "Internet     : [CONNECTED]"
+) else if /i "%INTERNET_STATUS%"=="NOT CONNECTED" (
+  call :UI_LINE ERROR "Internet     : [NOT CONNECTED]"
+) else (
+  call :UI_LINE WARNING "Internet     : [%INTERNET_STATUS%]"
 )
-set /a CENTER_PAD=(72-CENTER_LEN)/2
-if !CENTER_PAD! LSS 0 set "CENTER_PAD=0"
-set "CENTER_SPACES=                                                                        "
-echo !CENTER_SPACES:~0,%CENTER_PAD%!!CENTER_TEXT!
+call :UI_LINE INFO "Current Step : !UI_STEP!"
+call :UI_LINE LABEL "Safety       : !UI_SAFETY!"
+call :UI_LINE LABEL "Legal        : %LEGAL_BASE%"
+call :UI_LINE LABEL "Legal file   : %LEGAL_FILE%"
+call :UI_LINE HEADER "%UI_BORDER%"
+exit /b 0
+
+:UI_SECTION
+echo.
+call :UI_LINE "%~1" "%~2"
+call :UI_LINE MUTED "%UI_RULE%"
+exit /b 0
+
+:UI_WRAP
+set "UI_WRAP_TYPE=%~1"
+set "UI_WRAP_TEXT=%~2"
+set "UI_WRAP_LINE="
+for %%W in (!UI_WRAP_TEXT!) do (
+  if not defined UI_WRAP_LINE (
+    set "UI_WRAP_LINE=%%W"
+  ) else (
+    set "UI_WRAP_CAND=!UI_WRAP_LINE! %%W"
+    call :STRLEN "!UI_WRAP_CAND!" UI_WRAP_LEN
+    if !UI_WRAP_LEN! GTR 92 (
+      call :UI_LINE "!UI_WRAP_TYPE!" "!UI_WRAP_LINE!"
+      set "UI_WRAP_LINE=%%W"
+    ) else (
+      set "UI_WRAP_LINE=!UI_WRAP_CAND!"
+    )
+  )
+)
+if defined UI_WRAP_LINE call :UI_LINE "!UI_WRAP_TYPE!" "!UI_WRAP_LINE!"
+exit /b 0
+
+:UI_CENTER
+set "UI_CENTER_TYPE=%~1"
+set "UI_CENTER_TEXT=%~2"
+call :STRLEN "!UI_CENTER_TEXT!" UI_CENTER_LEN
+set /a UI_CENTER_PAD=(UI_WIDTH-UI_CENTER_LEN)/2
+if !UI_CENTER_PAD! LSS 0 set "UI_CENTER_PAD=0"
+set "UI_CENTER_LINE=!UI_SPACES:~0,%UI_CENTER_PAD%!!UI_CENTER_TEXT!"
+call :UI_LINE "!UI_CENTER_TYPE!" "!UI_CENTER_LINE!"
+exit /b 0
+
+:UI_LINE
+rem Central semantic color mapping for the launcher.
+set "UI_SEM=%~1"
+set "UI_TEXT=%~2"
+set "UI_ATTR=07"
+if /i "!UI_SEM!"=="HEADER" set "UI_ATTR=0B"
+if /i "!UI_SEM!"=="INFO" set "UI_ATTR=09"
+if /i "!UI_SEM!"=="PASS" set "UI_ATTR=0A"
+if /i "!UI_SEM!"=="WARNING" set "UI_ATTR=0E"
+if /i "!UI_SEM!"=="ERROR" set "UI_ATTR=0C"
+if /i "!UI_SEM!"=="INSTRUCTION" set "UI_ATTR=0F"
+if /i "!UI_SEM!"=="PROMPT" set "UI_ATTR=0D"
+if /i "!UI_SEM!"=="MUTED" set "UI_ATTR=08"
+call :STRLEN "!UI_TEXT!" UI_PRINT_LEN
+if !UI_PRINT_LEN! GTR %UI_WIDTH% set "UI_TEXT=!UI_TEXT:~0,%UI_WIDTH%!"
+>"%UI_TMP%" echo(!UI_TEXT!
+"%FINDSTR%" /a:!UI_ATTR! /r "^" "%UI_TMP%" 2>nul
+if errorlevel 1 echo(!UI_TEXT!
+del /f /q "%UI_TMP%" >nul 2>&1
+exit /b 0
+
+:STRLEN
+set "SL_TEXT=%~1"
+set /a SL_LEN=0
+:STRLEN_LOOP
+if not "!SL_TEXT:~%SL_LEN%,1!"=="" (
+  set /a SL_LEN+=1
+  if !SL_LEN! LSS 512 goto :STRLEN_LOOP
+)
+set "%~2=%SL_LEN%"
 exit /b 0
