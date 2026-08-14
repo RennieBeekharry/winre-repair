@@ -1,5 +1,5 @@
 @echo off
-rem WR-MODULE: reporting 2026.08.14-0948-ET
+rem WR-MODULE: reporting 2026.08.14-1015-ET
 if /i "%~1"=="write" goto :WRITE
 if /i "%~1"=="usbcopy" goto :USBCOPY
 exit /b 64
@@ -9,13 +9,23 @@ set "WR_R_STATUS=%~2"
 set "WR_R_RC=%~3"
 set "WR_R_COMMAND=%~4"
 set "WR_R_MESSAGE=%~5"
+set "WR_R_EVIDENCE=%~6"
+set "WR_R_INSTRUCTION=%~7"
+set "WR_R_REPLY=warning"
+if /i "%WR_R_STATUS%"=="PASS" set "WR_R_REPLY=pass"
+if /i "%WR_R_STATUS%"=="FAIL" set "WR_R_REPLY=fail"
+if not defined WR_R_EVIDENCE set "WR_R_EVIDENCE=None."
+if not defined WR_R_INSTRUCTION set "WR_R_INSTRUCTION=Follow the instruction shown by AI Recovery."
 if not exist "C:\WinRERepair" md "C:\WinRERepair" >nul 2>&1
 >"C:\WinRERepair\LAST_RUN_REPORT.txt" echo status=%WR_R_STATUS%
+>>"C:\WinRERepair\LAST_RUN_REPORT.txt" echo user_reply=%WR_R_REPLY%
 >>"C:\WinRERepair\LAST_RUN_REPORT.txt" echo return_code=%WR_R_RC%
 >>"C:\WinRERepair\LAST_RUN_REPORT.txt" echo command_version=%WR_R_COMMAND%
 >>"C:\WinRERepair\LAST_RUN_REPORT.txt" echo date=%date%
 >>"C:\WinRERepair\LAST_RUN_REPORT.txt" echo time=%time%
 >>"C:\WinRERepair\LAST_RUN_REPORT.txt" echo message=%WR_R_MESSAGE%
+>>"C:\WinRERepair\LAST_RUN_REPORT.txt" echo evidence_required=%WR_R_EVIDENCE%
+>>"C:\WinRERepair\LAST_RUN_REPORT.txt" echo user_instruction=%WR_R_INSTRUCTION%
 exit /b 0
 
 :USBCOPY
