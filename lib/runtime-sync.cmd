@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-rem WR-MODULE: runtime-sync 2026.08.14-1042-ET
+rem WR-MODULE: runtime-sync 2026.08.14-1117-ET
 
 set "MODE=%~1"
 set "REPO=%~2"
@@ -17,18 +17,20 @@ set "WPEUTIL=X:\Windows\System32\wpeutil.exe"
 set "DNS=64.71.255.204"
 set "APIHOST=api.github.com"
 set "BASE=https://%APIHOST%/repos/%REPO%/contents"
-set "APIIP="
 
 if not exist "%CURL%" exit /b 91
 if not exist "%FINDSTR%" exit /b 91
-if not exist "%NSLOOKUP%" exit /b 91
 if not exist "%RUNTIME%" md "%RUNTIME%" >nul 2>&1
 
 if exist "%PING%" (
   "%PING%" -n 1 -w 2000 1.1.1.1 >nul 2>&1
   if errorlevel 1 if exist "%WPEUTIL%" "%WPEUTIL%" InitializeNetwork >nul 2>&1
 )
-call :RESOLVE
+
+rem C:\wr.cmd resolves api.github.com before calling next.cmd. Preserve that
+rem proven address through the modular runtime instead of discarding it and
+rem forcing WinRE to repeat a DNS lookup that may fail.
+if not defined APIIP call :RESOLVE
 
 call :GET "lib/ui.cmd" "ui.cmd" "WR-MODULE: ui" || exit /b 90
 call :GET "lib/network.cmd" "network.cmd" "WR-MODULE: network" || exit /b 90
@@ -63,6 +65,7 @@ move /y "%TMP%" "%DEST%" >nul
 exit /b 0
 
 :RESOLVE
+if not exist "%NSLOOKUP%" exit /b 0
 set "CAND="
 for /f "delims=" %%L in ('"%NSLOOKUP%" %APIHOST% %DNS% 2^>nul ^| "%FINDSTR%" /R "[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*"') do (
   for %%T in (%%L) do set "CAND=%%T"
