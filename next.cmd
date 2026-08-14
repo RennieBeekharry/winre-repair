@@ -1,97 +1,137 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-set "COMMAND_VERSION=WR-2026.08.14-0325-ET"
-set "BUILD_TIME=2026-08-14 03:25 ET"
+set "COMMAND_VERSION=WR-2026.08.14-0328-ET"
+set "BUILD_TIME=2026-08-14 03:28 ET"
 set "WORK=C:\WinRERepair"
 set "DISKPART=X:\Windows\System32\diskpart.exe"
 set "FINDSTR=C:\Windows\System32\findstr.exe"
 set "TARGET_LABEL=WINREPAIR"
-set "VOLCMD=%WORK%\usb-target-volume.txt"
-set "VOLOUT=%WORK%\usb-target-volume-out.txt"
-set "OSCMD=%WORK%\os-volume.txt"
-set "OSOUT=%WORK%\os-volume-out.txt"
-set "DISKCMD=%WORK%\usb-target-disk.txt"
-set "DISKOUT=%WORK%\usb-target-disk-out.txt"
-set "LISTCMD=%WORK%\disk-list.txt"
-set "LISTOUT=%WORK%\disk-list-out.txt"
+set "LISTCMD=%WORK%\disk-list-0328.txt"
+set "LISTOUT=%WORK%\disk-list-out-0328.txt"
+set "SCANCMD=%WORK%\disk-scan-0328.txt"
+set "USBDETAIL=%WORK%\usb-candidate-detail-0328.txt"
+set "OSDETAIL=%WORK%\windows-disk-detail-0328.txt"
 set "FINGERPRINT=%WORK%\usb-media-target-fingerprint.txt"
 set "USBLETTER="
 set "USBDISK="
 set "OSDISK="
 set "USBID=UNKNOWN"
 set "USBTYPE=UNKNOWN"
-set "MATCHCOUNT=0"
+set "USBSIZE=UNKNOWN"
+set "USBUNIT=UNKNOWN"
+set "USBLINE=UNAVAILABLE"
+set "OSLINE=UNAVAILABLE"
+set "LABELMATCH=0"
+set "USBMATCH=0"
+set "OSMATCH=0"
+set "SIZEOK=NO"
 set "SAFE=NO"
 
 cls
 echo ================================================================
 echo WINRE-REPAIR - USB MEDIA TARGET IDENTIFICATION
-echo Version: %COMMAND_VERSION%
+ echo Version: %COMMAND_VERSION%
 echo Built:   %BUILD_TIME%
 echo Fetched: %date% %time%
 echo Mode:    READ-ONLY - NOTHING WILL BE ERASED
 echo ================================================================
 echo.
-echo Looking for exactly one existing USB volume labelled %TARGET_LABEL%.
-echo The internal Windows disk will be identified independently and excluded.
+echo Fail-closed identification of the existing %TARGET_LABEL% USB.
+echo This stage contains no clean, format, partition, or delete command.
 echo.
 
 if not exist "%WORK%" md "%WORK%" >nul 2>&1
 if not exist "%DISKPART%" goto :SUMMARY
+if exist "%USBDETAIL%" del /f /q "%USBDETAIL%" >nul 2>&1
+if exist "%OSDETAIL%" del /f /q "%OSDETAIL%" >nul 2>&1
 
-rem Find exactly one mounted volume with the known existing WINREPAIR label.
+rem First identify exactly one mounted volume by its existing known label.
 for %%L in (D E F G H I J K L M N O P Q R S T U V W Y Z) do (
   vol %%L: 2>nul | "%FINDSTR%" /i /c:"%TARGET_LABEL%" >nul 2>&1
   if not errorlevel 1 (
-    set /a MATCHCOUNT+=1
+    set /a LABELMATCH+=1
     set "USBLETTER=%%L"
   )
 )
-if not "%MATCHCOUNT%"=="1" goto :SUMMARY
+if not "!LABELMATCH!"=="1" goto :SUMMARY
 
-rem Map the labelled USB volume to its physical disk number.
->"%VOLCMD%" echo select volume %USBLETTER%
->>"%VOLCMD%" echo detail volume
-"%DISKPART%" /s "%VOLCMD%" >"%VOLOUT%" 2>&1
-for /f "tokens=1,2,3" %%A in ('"%FINDSTR%" /R /C:"Disk [0-9]" "%VOLOUT%"') do (
-  if /i "%%A"=="Disk" set "USBDISK=%%B"
-  if /i "%%B"=="Disk" set "USBDISK=%%C"
-)
-if not defined USBDISK goto :SUMMARY
-
-rem Independently map the offline Windows C: volume to its physical disk.
->"%OSCMD%" echo select volume C
->>"%OSCMD%" echo detail volume
-"%DISKPART%" /s "%OSCMD%" >"%OSOUT%" 2>&1
-for /f "tokens=1,2,3" %%A in ('"%FINDSTR%" /R /C:"Disk [0-9]" "%OSOUT%"') do (
-  if /i "%%A"=="Disk" set "OSDISK=%%B"
-  if /i "%%B"=="Disk" set "OSDISK=%%C"
-)
-if not defined OSDISK goto :SUMMARY
-if "%USBDISK%"=="%OSDISK%" goto :SUMMARY
-
-rem Inspect the candidate physical disk. It must explicitly report USB.
->"%DISKCMD%" echo select disk %USBDISK%
->>"%DISKCMD%" echo detail disk
-"%DISKPART%" /s "%DISKCMD%" >"%DISKOUT%" 2>&1
-"%FINDSTR%" /i /R /C:"Type.*USB" "%DISKOUT%" >nul 2>&1
-if errorlevel 1 goto :SUMMARY
-set "USBTYPE=USB"
-for /f "tokens=3" %%I in ('"%FINDSTR%" /i /c:"Disk ID:" "%DISKOUT%"') do if /i "!USBID!"=="UNKNOWN" set "USBID=%%I"
-
-rem Capture disk list lines so the user can visually verify the capacity.
+rem Capture the physical disk table once.
 >"%LISTCMD%" echo list disk
 "%DISKPART%" /s "%LISTCMD%" >"%LISTOUT%" 2>&1
-set "SAFE=YES"
 
-rem Save the non-secret fingerprint for the destructive stage to re-check.
+rem Disk-centric scan: DETAIL DISK officially lists the volumes on that disk.
+rem Find the physical disk that actually contains WINREPAIR, and independently
+rem find the disk containing the C: Windows volume.
+for /L %%D in (0,1,15) do (
+  >"%SCANCMD%" echo select disk %%D
+  >>"%SCANCMD%" echo detail disk
+  "%DISKPART%" /s "%SCANCMD%" >"%WORK%\disk-%%D-detail-0328.txt" 2>&1
+
+  "%FINDSTR%" /i /c:"%TARGET_LABEL%" "%WORK%\disk-%%D-detail-0328.txt" >nul 2>&1
+  if not errorlevel 1 (
+    set /a USBMATCH+=1
+    set "USBDISK=%%D"
+    copy /y "%WORK%\disk-%%D-detail-0328.txt" "%USBDETAIL%" >nul 2>&1
+  )
+
+  "%FINDSTR%" /i /c:"Volume" "%WORK%\disk-%%D-detail-0328.txt" 2>nul | "%FINDSTR%" /R /C:"[ ]C[ ]" >nul 2>&1
+  if not errorlevel 1 (
+    set /a OSMATCH+=1
+    set "OSDISK=%%D"
+    copy /y "%WORK%\disk-%%D-detail-0328.txt" "%OSDETAIL%" >nul 2>&1
+  )
+)
+
+if not "!USBMATCH!"=="1" goto :SUMMARY
+if not "!OSMATCH!"=="1" goto :SUMMARY
+if "!USBDISK!"=="!OSDISK!" goto :SUMMARY
+if not exist "%USBDETAIL%" goto :SUMMARY
+
+rem Candidate must explicitly identify as USB in its physical-disk properties.
+"%FINDSTR%" /i /c:"Type" "%USBDETAIL%" 2>nul | "%FINDSTR%" /i /c:"USB" >nul 2>&1
+if errorlevel 1 goto :SUMMARY
+set "USBTYPE=USB"
+
+rem Capture disk ID if DiskPart exposes one. UNKNOWN is displayed but is not
+rem trusted as an identifier by itself.
+for /f "tokens=1,* delims=:" %%A in ('"%FINDSTR%" /i /c:"Disk ID:" "%USBDETAIL%" 2^>nul') do if /i "!USBID!"=="UNKNOWN" set "USBID=%%B"
+for /f "tokens=*" %%I in ("!USBID!") do set "USBID=%%I"
+if not defined USBID set "USBID=UNKNOWN"
+
+rem Parse the candidate and Windows rows from LIST DISK. Support both normal
+rem rows and the optional leading '*' focus marker.
+for /f "tokens=1,2,3,4,5,6,7" %%A in ('"%FINDSTR%" /i /c:"Disk" "%LISTOUT%"') do (
+  if /i "%%A"=="Disk" if "%%B"=="!USBDISK!" (
+    set "USBLINE=%%A %%B %%C %%D %%E %%F %%G"
+    set "USBSIZE=%%D"
+    set "USBUNIT=%%E"
+  )
+  if "%%A"=="*" if /i "%%B"=="Disk" if "%%C"=="!USBDISK!" (
+    set "USBLINE=%%A %%B %%C %%D %%E %%F %%G"
+    set "USBSIZE=%%E"
+    set "USBUNIT=%%F"
+  )
+  if /i "%%A"=="Disk" if "%%B"=="!OSDISK!" set "OSLINE=%%A %%B %%C %%D %%E %%F %%G"
+  if "%%A"=="*" if /i "%%B"=="Disk" if "%%C"=="!OSDISK!" set "OSLINE=%%A %%B %%C %%D %%E %%F %%G"
+)
+
+rem The user's USB is nominally 128 GB; Windows normally reports roughly
+rem 119 GB. Accept only a deliberately broad 100-140 GB physical-disk window.
+if /i "!USBUNIT!"=="GB" (
+  set /a USBNUM=!USBSIZE! 2>nul
+  if !USBNUM! GEQ 100 if !USBNUM! LEQ 140 set "SIZEOK=YES"
+)
+if /i not "!SIZEOK!"=="YES" goto :SUMMARY
+
+set "SAFE=YES"
 >"%FINGERPRINT%" echo Version=%COMMAND_VERSION%
 >>"%FINGERPRINT%" echo ExistingLabel=%TARGET_LABEL%
 >>"%FINGERPRINT%" echo ExistingDriveLetter=%USBLETTER%:
 >>"%FINGERPRINT%" echo CandidateDisk=%USBDISK%
 >>"%FINGERPRINT%" echo CandidateDiskID=%USBID%
 >>"%FINGERPRINT%" echo CandidateType=%USBTYPE%
+>>"%FINGERPRINT%" echo CandidateReportedSize=%USBSIZE% %USBUNIT%
 >>"%FINGERPRINT%" echo WindowsDisk=%OSDISK%
 
 :SUMMARY
@@ -100,20 +140,25 @@ echo ================================================================
 echo USB MEDIA TARGET SNAPSHOT
 echo Version: %COMMAND_VERSION%
 echo ================================================================
-echo Matching WINREPAIR volumes : %MATCHCOUNT%
-echo Candidate drive letter     : %USBLETTER%:
+echo Matching WINREPAIR volumes : %LABELMATCH%
+echo Existing drive letter      : %USBLETTER%:
+echo Disks containing WINREPAIR : %USBMATCH%
 echo Candidate physical disk    : %USBDISK%
 echo Candidate disk type        : %USBTYPE%
 echo Candidate disk ID          : %USBID%
+echo Candidate reported size    : %USBSIZE% %USBUNIT%
+echo 128-GB size check          : %SIZEOK%
+echo Disks containing Windows C : %OSMATCH%
 echo Windows C: physical disk   : %OSDISK%
 echo ---------------------------------------------------------------
-if defined USBDISK (
-  echo Candidate disk listing:
-  "%FINDSTR%" /i /c:"Disk %USBDISK%" "%LISTOUT%" 2>nul
-)
-if defined OSDISK (
-  echo Windows disk listing:
-  "%FINDSTR%" /i /c:"Disk %OSDISK%" "%LISTOUT%" 2>nul
+echo Candidate LIST DISK row:
+echo %USBLINE%
+echo Windows LIST DISK row:
+echo %OSLINE%
+echo ---------------------------------------------------------------
+if exist "%USBDETAIL%" (
+  echo Candidate proof from DETAIL DISK:
+  "%FINDSTR%" /i /c:"Disk ID:" /c:"Type" /c:"%TARGET_LABEL%" "%USBDETAIL%" 2>nul
 )
 echo ---------------------------------------------------------------
 if /i "%SAFE%"=="YES" (
