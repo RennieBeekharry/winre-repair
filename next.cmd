@@ -1,174 +1,170 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-set "COMMAND_VERSION=WR-2026.08.14-0240-ET"
-set "BUILD_TIME=2026-08-14 02:40 ET"
+set "COMMAND_VERSION=WR-2026.08.14-0248-ET"
+set "BUILD_TIME=2026-08-14 02:48 ET"
 set "OS=C:"
 set "WORK=C:\WinRERepair"
 set "REG=X:\Windows\System32\reg.exe"
-set "DISM=X:\Windows\System32\dism.exe"
 set "FINDSTR=C:\Windows\System32\findstr.exe"
-set "WPEUTIL=X:\Windows\System32\wpeutil.exe"
-set "INF=%WORK%\intel167\iaAHCIC.inf"
-set "INFO=%WORK%\binding-candidate-info.txt"
-set "INV=%WORK%\binding-driver-inventory.txt"
-set "LOG=%WORK%\storage-binding-test.log"
-set "HIVEBACKUP=%WORK%\SYSTEM.before-iaStorAC-binding.hiv"
-set "DEVBACKUP=%WORK%\DEV_A102.before-iaStorAC-binding.reg"
-set "ACBACKUP=%WORK%\iaStorAC.before-binding.reg"
-set "ABACKUP=%WORK%\iaStorA.before-binding.reg"
-set "MARKER=%WORK%\iaStorAC-binding-applied.txt"
+set "CHKDSK=X:\Windows\System32\chkdsk.exe"
+set "FSUTIL=X:\Windows\System32\fsutil.exe"
+set "DISKPART=X:\Windows\System32\diskpart.exe"
+set "CERTUTIL=X:\Windows\System32\certutil.exe"
+set "WMIC=X:\Windows\System32\wbem\wmic.exe"
+if not exist "%WMIC%" set "WMIC=C:\Windows\System32\wbem\wmic.exe"
+set "POWERSHELL=X:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+if not exist "%POWERSHELL%" set "POWERSHELL=C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
 set "DEVICEKEY=HKLM\WR_SYS\ControlSet001\Enum\PCI\VEN_8086&DEV_A102&SUBSYS_2B45103C&REV_31\3&11583659&0&B8"
+set "LOG=%WORK%\drive-health-triage.log"
+set "CHK=%WORK%\chkdsk-readonly.txt"
+set "SMART=%WORK%\smart-status.txt"
+set "PHYS=%WORK%\physicaldisk-status.txt"
+set "DPIN=%WORK%\diskpart-health.txt"
+set "DPOUT=%WORK%\diskpart-health-out.txt"
+set "DIRTYOUT=%WORK%\dirty-bit.txt"
+set "ROLLBACK=UNKNOWN"
+set "READABLE=NO"
+set "DISKONLINE=UNKNOWN"
+set "SMARTSTATE=UNAVAILABLE"
+set "PHYSSTATE=UNAVAILABLE"
+set "DIRTYSTATE=UNKNOWN"
+set "CHKSTATE=INCONCLUSIVE"
+set "READTEST=FAIL"
+set "ASSESS=NO_OBVIOUS_DRIVE_FAILURE"
 
 cls
 echo ================================================================
-echo WINRE-REPAIR - REVERSIBLE STORAGE BINDING TEST
+echo WINRE-REPAIR - DRIVE HEALTH SNAPSHOT
 echo Version: %COMMAND_VERSION%
 echo Built:   %BUILD_TIME%
 echo Fetched: %date% %time%
 echo ================================================================
 echo.
-echo Target: Intel DEV_A102 SATA AHCI controller only
-echo Change: iaStorA -^> iaStorAC service binding
-echo Backup: full offline SYSTEM hive + exact registry keys
-echo Reboot: automatic after successful verification
+echo Restoring the failed iaStorAC test binding, then checking the drive.
+echo Drive checks are READ-ONLY. CHKDSK is run without /F or /R.
 echo.
 
 if not exist "%WORK%" md "%WORK%" >nul 2>&1
 >"%LOG%" echo [%date% %time%] START %COMMAND_VERSION%
 
-if not exist "%OS%\Windows\System32\Config\SYSTEM" goto :FAIL_OS
-if not exist "%OS%\Windows\System32\drivers\iaStorAC.sys" goto :FAIL_SYS
-if not exist "%INF%" goto :FAIL_INF
-
-rem Re-validate the exact signed candidate before touching the binding.
-%DISM% /Image:%OS%\ /Get-DriverInfo /Driver:"%INF%" /English /Format:List >"%INFO%" 2>&1
-if errorlevel 1 goto :FAIL_META
-%FINDSTR% /l /i /c:"PCI\VEN_8086&DEV_A102&CC_0106" "%INFO%" >nul 2>&1
-if errorlevel 1 goto :FAIL_META
-%FINDSTR% /l /i /c:"16.7.1.1012" "%INFO%" >nul 2>&1
-if errorlevel 1 goto :FAIL_META
-%FINDSTR% /l /i /c:"iaStorAC" "%INFO%" >nul 2>&1
-if errorlevel 1 goto :FAIL_META
-%FINDSTR% /l /i /c:"amd64" "%INFO%" >nul 2>&1
-if errorlevel 1 goto :FAIL_META
-
-%DISM% /Image:%OS%\ /Get-Drivers /All /English /Format:Table >"%INV%" 2>&1
-%FINDSTR% /l /i /c:"16.7.1.1012" "%INV%" >nul 2>&1
-if errorlevel 1 goto :FAIL_INSTALLED
-
+rem Roll back only the exact controller service value changed by build 0240.
+if not exist "%OS%\Windows\System32\Config\SYSTEM" goto :NO_OS
 %REG% unload HKLM\WR_SYS >nul 2>&1
 %REG% load HKLM\WR_SYS "%OS%\Windows\System32\Config\SYSTEM" >>"%LOG%" 2>&1
-if errorlevel 1 goto :FAIL_HIVE
-
+if errorlevel 1 goto :ROLLBACK_FAIL
 set "CURSERVICE=UNKNOWN"
-set "ACSTART=UNKNOWN"
 for /f "tokens=2,*" %%A in ('%REG% query "%DEVICEKEY%" /v Service 2^>nul ^| %FINDSTR% /i "Service"') do set "CURSERVICE=%%B"
-for /f "tokens=2,*" %%A in ('%REG% query HKLM\WR_SYS\ControlSet001\Services\iaStorAC /v Start 2^>nul ^| %FINDSTR% /i "Start"') do set "ACSTART=%%B"
-
-echo [%date% %time%] Current Service=!CURSERVICE!>>"%LOG%"
-echo [%date% %time%] iaStorAC Start=!ACSTART!>>"%LOG%"
-
-if /i "!CURSERVICE!"=="iaStorAC" goto :ALREADY_APPLIED
-if /i not "!CURSERVICE!"=="iaStorA" goto :FAIL_UNEXPECTED_SERVICE
-if /i not "!ACSTART!"=="0x0" goto :FAIL_START
-
-%REG% query HKLM\WR_SYS\ControlSet001\Services\iaStorAC /v ImagePath 2>nul | %FINDSTR% /i /c:"iaStorAC.sys" >nul 2>&1
-if errorlevel 1 goto :FAIL_IMAGEPATH
-
-rem Create rollback evidence before the single registry change.
-%REG% save HKLM\WR_SYS "%HIVEBACKUP%" /y >>"%LOG%" 2>&1
-if errorlevel 1 goto :FAIL_BACKUP
-%REG% export "%DEVICEKEY%" "%DEVBACKUP%" /y >>"%LOG%" 2>&1
-if errorlevel 1 goto :FAIL_BACKUP
-%REG% export HKLM\WR_SYS\ControlSet001\Services\iaStorAC "%ACBACKUP%" /y >>"%LOG%" 2>&1
-if errorlevel 1 goto :FAIL_BACKUP
-%REG% export HKLM\WR_SYS\ControlSet001\Services\iaStorA "%ABACKUP%" /y >>"%LOG%" 2>&1
-if errorlevel 1 goto :FAIL_BACKUP
-
-rem Single reversible change: bind this exact PCI controller node to iaStorAC.
-%REG% add "%DEVICEKEY%" /v Service /t REG_SZ /d iaStorAC /f >>"%LOG%" 2>&1
-if errorlevel 1 goto :FAIL_WRITE
-
+if /i "!CURSERVICE!"=="iaStorAC" (
+  %REG% add "%DEVICEKEY%" /v Service /t REG_SZ /d iaStorA /f >>"%LOG%" 2>&1
+  if errorlevel 1 goto :ROLLBACK_FAIL_LOADED
+)
 set "NEWSERVICE=UNKNOWN"
 for /f "tokens=2,*" %%A in ('%REG% query "%DEVICEKEY%" /v Service 2^>nul ^| %FINDSTR% /i "Service"') do set "NEWSERVICE=%%B"
-if /i not "!NEWSERVICE!"=="iaStorAC" goto :FAIL_VERIFY
+if /i "!NEWSERVICE!"=="iaStorA" set "ROLLBACK=OK"
+%REG% unload HKLM\WR_SYS >nul 2>&1
+if /i not "%ROLLBACK%"=="OK" goto :ROLLBACK_FAIL
 
->"%MARKER%" echo Version=%COMMAND_VERSION%
->>"%MARKER%" echo Applied=%date% %time%
->>"%MARKER%" echo Controller=PCI\VEN_8086^&DEV_A102
->>"%MARKER%" echo PreviousService=iaStorA
->>"%MARKER%" echo NewService=iaStorAC
->>"%MARKER%" echo RollbackHive=%HIVEBACKUP%
->>"%MARKER%" echo RollbackDeviceKey=%DEVBACKUP%
+goto :DRIVE_TESTS
 
-%REG% unload HKLM\WR_SYS >>"%LOG%" 2>&1
+:ROLLBACK_FAIL_LOADED
+%REG% unload HKLM\WR_SYS >nul 2>&1
+:ROLLBACK_FAIL
+set "ROLLBACK=FAILED"
+goto :SUMMARY
 
-echo.
+:NO_OS
+set "ROLLBACK=NOT_RUN"
+goto :SUMMARY
+
+:DRIVE_TESTS
+if exist "%OS%\Windows\System32\ntoskrnl.exe" set "READABLE=YES"
+
+rem Verify that actual bytes can be read from two boot-critical files.
+if exist "%CERTUTIL%" (
+  "%CERTUTIL%" -hashfile "%OS%\Windows\System32\ntoskrnl.exe" SHA256 >nul 2>&1
+  if not errorlevel 1 (
+    "%CERTUTIL%" -hashfile "%OS%\Windows\System32\drivers\disk.sys" SHA256 >nul 2>&1
+    if not errorlevel 1 set "READTEST=PASS"
+  )
+)
+
+rem DiskPart visibility/online state.
+>"%DPIN%" echo list disk
+>>"%DPIN%" echo list volume
+"%DISKPART%" /s "%DPIN%" >"%DPOUT%" 2>&1
+%FINDSTR% /i /c:"Online" "%DPOUT%" >nul 2>&1
+if not errorlevel 1 set "DISKONLINE=YES"
+
+rem Query NTFS dirty bit; no repair action.
+"%FSUTIL%" dirty query %OS% >"%DIRTYOUT%" 2>&1
+%FINDSTR% /i /c:"is NOT Dirty" "%DIRTYOUT%" >nul 2>&1
+if not errorlevel 1 set "DIRTYSTATE=CLEAN"
+if /i "%DIRTYSTATE%"=="UNKNOWN" (
+  %FINDSTR% /i /c:"is Dirty" "%DIRTYOUT%" >nul 2>&1
+  if not errorlevel 1 set "DIRTYSTATE=DIRTY"
+)
+
+rem Try SMART predictive status if WMIC/WMI is available in this WinRE image.
+if exist "%WMIC%" (
+  "%WMIC%" /namespace:\\root\wmi path MSStorageDriver_FailurePredictStatus get PredictFailure /value >"%SMART%" 2>&1
+  %FINDSTR% /i /c:"PredictFailure=TRUE" "%SMART%" >nul 2>&1
+  if not errorlevel 1 set "SMARTSTATE=FAIL"
+  if /i "!SMARTSTATE!"=="UNAVAILABLE" (
+    %FINDSTR% /i /c:"PredictFailure=FALSE" "%SMART%" >nul 2>&1
+    if not errorlevel 1 set "SMARTSTATE=PASS"
+  )
+)
+
+rem Try Storage Management health if PowerShell Storage cmdlets are available.
+if exist "%POWERSHELL%" (
+  "%POWERSHELL%" -NoLogo -NoProfile -NonInteractive -Command "Get-PhysicalDisk ^| Format-List FriendlyName,OperationalStatus,HealthStatus,Size" >"%PHYS%" 2>&1
+  %FINDSTR% /i /c:"HealthStatus" "%PHYS%" >nul 2>&1
+  if not errorlevel 1 (
+    %FINDSTR% /i /c:"Unhealthy" /c:"Warning" /c:"Lost Communication" "%PHYS%" >nul 2>&1
+    if errorlevel 1 (set "PHYSSTATE=HEALTHY") else (set "PHYSSTATE=WARNING")
+  )
+)
+
+rem Microsoft documents CHKDSK without repair switches as status/read-only.
+echo Running read-only CHKDSK. This may take several minutes...
+"%CHKDSK%" %OS% >"%CHK%" 2>&1
+%FINDSTR% /i /c:"found no problems" "%CHK%" >nul 2>&1
+if not errorlevel 1 set "CHKSTATE=CLEAN"
+%FINDSTR% /i /c:"found problems" /c:"errors found" "%CHK%" >nul 2>&1
+if not errorlevel 1 set "CHKSTATE=ERRORS_FOUND"
+%FINDSTR% /i /c:"0 KB in bad sectors" "%CHK%" >nul 2>&1
+if not errorlevel 1 (
+  if /i "%CHKSTATE%"=="INCONCLUSIVE" set "CHKSTATE=NO_BAD_SECTORS_REPORTED"
+) else (
+  %FINDSTR% /i /c:"KB in bad sectors" "%CHK%" >nul 2>&1
+  if not errorlevel 1 set "CHKSTATE=BAD_SECTORS_REPORTED"
+)
+
+if /i "%SMARTSTATE%"=="FAIL" set "ASSESS=DRIVE_FAILURE_SUSPECTED"
+if /i "%PHYSSTATE%"=="WARNING" set "ASSESS=DRIVE_FAILURE_SUSPECTED"
+if /i "%CHKSTATE%"=="BAD_SECTORS_REPORTED" set "ASSESS=DRIVE_FAILURE_SUSPECTED"
+if /i "%READABLE%"=="NO" set "ASSESS=DRIVE_FAILURE_SUSPECTED"
+if /i "%READTEST%"=="FAIL" set "ASSESS=DRIVE_FAILURE_SUSPECTED"
+if /i "%SMARTSTATE%"=="UNAVAILABLE" if /i "%PHYSSTATE%"=="UNAVAILABLE" if /i "%CHKSTATE%"=="INCONCLUSIVE" set "ASSESS=DRIVE_HEALTH_INCONCLUSIVE"
+
+:SUMMARY
+cls
 echo ================================================================
-echo STORAGE BINDING TEST APPLIED AND VERIFIED
+echo RECOVERY SNAPSHOT
 echo Version: %COMMAND_VERSION%
-echo Previous binding: iaStorA
-echo Test binding:     iaStorAC
-echo Full SYSTEM backup: %HIVEBACKUP%
 echo ================================================================
-echo Rebooting in 10 seconds to test Windows startup...
-ping -n 11 127.0.0.1 >nul
-%WPEUTIL% reboot
+echo Failed binding rollback : %ROLLBACK%
+echo Windows volume readable : %READABLE%
+echo Boot-file read test     : %READTEST%
+echo Physical disk online    : %DISKONLINE%
+echo SMART predictive status : %SMARTSTATE%
+echo PhysicalDisk health     : %PHYSSTATE%
+echo NTFS dirty bit          : %DIRTYSTATE%
+echo CHKDSK read-only        : %CHKSTATE%
+echo ---------------------------------------------------------------
+echo ASSESSMENT: %ASSESS%
+echo ================================================================
+echo Take ONE photo of this screen and send it to ChatGPT.
+echo No disk repair was performed.
 exit /b 0
-
-:ALREADY_APPLIED
-%REG% unload HKLM\WR_SYS >nul 2>&1
-echo.
-echo BINDING TEST IS ALREADY APPLIED.
-echo Current controller service is already iaStorAC.
-echo No additional change and no automatic reboot were performed.
-exit /b 60
-
-:FAIL_OS
-set "MSG=Offline Windows SYSTEM hive was not found on C:."
-goto :FAIL
-:FAIL_SYS
-set "MSG=iaStorAC.sys is missing. Binding was not changed."
-goto :FAIL
-:FAIL_INF
-set "MSG=Validated Intel 16.7 candidate INF is missing. Binding was not changed."
-goto :FAIL
-:FAIL_META
-set "MSG=Intel 16.7 metadata validation failed. Binding was not changed."
-goto :FAIL
-:FAIL_INSTALLED
-set "MSG=Intel 16.7.1.1012 is not present in the offline driver inventory."
-goto :FAIL
-:FAIL_HIVE
-set "MSG=Could not load the offline SYSTEM hive."
-goto :FAIL
-:FAIL_UNEXPECTED_SERVICE
-set "MSG=Controller is not currently bound to iaStorA. Unexpected state; stopped."
-goto :FAIL_LOADED
-:FAIL_START
-set "MSG=iaStorAC is not configured as Start=0. Binding was not changed."
-goto :FAIL_LOADED
-:FAIL_IMAGEPATH
-set "MSG=iaStorAC ImagePath does not point to iaStorAC.sys. Binding was not changed."
-goto :FAIL_LOADED
-:FAIL_BACKUP
-set "MSG=Rollback backup creation failed. Binding was not changed."
-goto :FAIL_LOADED
-:FAIL_WRITE
-set "MSG=Registry binding write failed."
-goto :FAIL_LOADED
-:FAIL_VERIFY
-set "MSG=Registry binding verification failed."
-goto :FAIL_LOADED
-
-:FAIL_LOADED
-%REG% unload HKLM\WR_SYS >nul 2>&1
-:FAIL
-echo.
-echo ================================================================
-echo BINDING TEST STOPPED SAFELY
-echo %MSG%
-echo No reboot was initiated.
-echo ================================================================
-exit /b 90
