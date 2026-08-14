@@ -8,11 +8,12 @@ rem WR_TARGET=Recovery tooling under C:\WinRERepair only; no Windows boot files 
 rem WR_CONSEQUENCE=Records Terms acceptance and establishes a repository-scoped outbound GitHub App credential.
 rem WR_ROLLBACK=Local RescueMeAI authorization files can be removed later; no Windows recovery changes are performed.
 
-set "COMMAND_VERSION=RMAI-2026.08.14-SECURE-PAIRING-5"
+set "COMMAND_VERSION=RMAI-2026.08.14-SECURE-PAIRING-6"
 set "PRODUCT=RescueMeAI"
 set "DESCRIPTION=AI-ASSISTED WINDOWS RECOVERY"
 set "TERMS_VERSION=2026-08-14"
-set "LEGAL_URL=https://github.com/RennieBeekharry/winre-repair/blob/main/LEGAL.md"
+set "LEGAL_BASE=https://github.com/RennieBeekharry/winre-repair"
+set "LEGAL_FILE=LEGAL.md"
 set "WORK=C:\WinRERepair"
 set "LEGAL=%WORK%\legal"
 set "AUTHDIR=%WORK%\.auth"
@@ -28,6 +29,8 @@ set "NSLOOKUP=C:\Windows\System32\nslookup.exe"
 set "CERTUTIL=C:\Windows\System32\certutil.exe"
 set "PING=X:\Windows\System32\ping.exe"
 set "WPEUTIL=X:\Windows\System32\wpeutil.exe"
+set "MODE=C:\Windows\System32\mode.com"
+if not exist "%MODE%" set "MODE=mode"
 set "APIHOST=api.github.com"
 set "WEBHOST=github.com"
 set "LOGREPO=RennieBeekharry/winre-repair-logs"
@@ -35,9 +38,17 @@ set "GITHUB_APP_ID=4595411"
 set "GITHUB_APP_CLIENT_ID=Iv23lif9UoXW4QvUh8tJ"
 set "GITHUB_REPOSITORY_ID=1333818657"
 
+rem UI geometry. Callers use semantic types; :UI_PAINT is the only function
+rem that maps semantic meaning to console color attributes.
+set "UI_WIDTH=96"
+set "UI_TEXT_WIDTH=92"
+set "UI_BORDER================================================================================================="
+set "UI_RULE=------------------------------------------------------------------------------------------------"
+set "UI_SPACES=                                                                                                    "
+set "UI_TMP=%TEMP%\rmai-pair-ui-%RANDOM%%RANDOM%.txt"
+
 rem The persistent C:\wr.cmd launcher downloaded this exact build over HTTPS.
-rem Therefore current-run Internet access is already proven without relying
-rem on ICMP ping. Preserve any API address the launcher resolved.
+rem Current-run Internet access is therefore already proven.
 set "LAUNCHER_APIIP=%APIIP%"
 set "APIIP=%LAUNCHER_APIIP%"
 set "WEBIP="
@@ -60,6 +71,7 @@ set "REPORTVOL="
 if not exist "%WORK%" md "%WORK%" >nul 2>&1
 if not exist "%LEGAL%" md "%LEGAL%" >nul 2>&1
 if not exist "%AUTHDIR%" md "%AUTHDIR%" >nul 2>&1
+call :UI_SETUP
 call :WRITE_REPORT RUNNING 0 "RescueMeAI secure pairing started."
 call :WRITE_DETAILS
 
@@ -76,15 +88,15 @@ if errorlevel 1 goto :FAIL
 call :REQUIRE "%PING%" "ping.exe"
 if errorlevel 1 goto :FAIL
 
-rem A direct-IP ping is only a secondary network signal. The successful
-rem launcher HTTPS fetch remains authoritative for CONNECTED status.
+rem Direct-IP ping is secondary evidence only. The successful launcher HTTPS
+rem fetch remains authoritative for the CONNECTED header state.
 if exist "%PING%" (
   "%PING%" -n 1 -w 1500 1.1.1.1 >nul 2>&1
   if errorlevel 1 if exist "%WPEUTIL%" "%WPEUTIL%" InitializeNetwork >nul 2>&1
 )
 
 rem -------------------------------------------------------------------------
-rem TERMS ACCEPTANCE - embedded so no secondary RescueMeAI download is needed.
+rem TERMS ACCEPTANCE - embedded so no secondary public download is required.
 rem -------------------------------------------------------------------------
 set "STAGE=TERMS_ACCEPTANCE"
 set "COMPONENT=embedded Terms gate"
@@ -102,41 +114,29 @@ if /i "!ALREADY_ACCEPTED!"=="YES" if /i "!ACCEPTED_VERSION!"=="%TERMS_VERSION%" 
   goto :TERMS_DONE
 )
 
-call :HEADER 0E "TERMS AND RECOVERY RISK ACCEPTANCE" "REPAIR WRITE - NON-DESTRUCTIVE"
-call :CENTER "TERMS AND RECOVERY RISK ACCEPTANCE"
+call :UI_HEADER "TERMS AND RECOVERY RISK ACCEPTANCE" "REPAIR WRITE - NON-DESTRUCTIVE"
+call :UI_SECTION WARNING "TERMS AND RECOVERY RISK ACCEPTANCE"
+call :UI_LINE LABEL "Terms version: %TERMS_VERSION%"
 echo.
-echo Terms version: %TERMS_VERSION%
+call :UI_WRAP INFO "RescueMeAI is system-recovery software. Recovery actions can cause data loss, corruption, downtime, loss of bootability, or the need for reset, reinstall, professional service, or hardware repair."
 echo.
-echo RescueMeAI is system-recovery software. Recovery actions can cause
-echo data loss, corruption, downtime, loss of bootability, or the need for
-echo reset, reinstall, professional service, or hardware repair.
+call :UI_LINE INFO "By continuing, you acknowledge and agree that:"
+call :UI_WRAP INFO "- Recovery results are NOT guaranteed."
+call :UI_WRAP INFO "- AI-generated recommendations can be incorrect."
+call :UI_WRAP INFO "- Important data and recovery keys should be backed up where possible."
+call :UI_WRAP INFO "- Recovery-relevant technical evidence may be stored locally and, after authenticated reporting is enabled, in the configured private recovery evidence backend."
+call :UI_WRAP INFO "- RescueMeAI is provided AS IS to the maximum extent permitted by law."
+call :UI_WRAP INFO "- You assume the risks of using recovery software and liability is limited to the maximum extent permitted by applicable law."
+call :UI_WRAP INFO "- Mandatory statutory or consumer rights remain where law does not permit waiver or exclusion."
+call :UI_SECTION INFO "LEGAL DOCUMENTS"
+call :UI_LINE LABEL "Legal repository: %LEGAL_BASE%"
+call :UI_LINE LABEL "Legal landing file: %LEGAL_FILE%"
+call :UI_SECTION WARNING "IMPORTANT"
+call :UI_WRAP WARNING "Typing ACCEPT agrees to the general RescueMeAI legal terms. It does NOT authorize a destructive repair. Destructive actions require a separate, action-specific local authorization when RescueMeAI permits them."
+call :UI_SECTION INSTRUCTION "ACTION REQUIRED"
+call :UI_WRAP INSTRUCTION "Type exactly ACCEPT to agree and continue. Anything else stops RescueMeAI safely without starting recovery."
 echo.
-echo By continuing, you acknowledge and agree that:
-echo   - Recovery results are NOT guaranteed.
-echo   - AI-generated recommendations can be incorrect.
-echo   - Important data and recovery keys should be backed up where possible.
-echo   - Recovery-relevant technical evidence may be stored locally and,
-echo     after authenticated reporting is enabled, in the configured private
-echo     recovery evidence backend.
-echo   - RescueMeAI is provided AS IS to the maximum extent permitted by law.
-echo   - You assume the risks of using recovery software and liability is
-echo     limited to the maximum extent permitted by applicable law.
-echo   - Mandatory statutory or consumer rights remain where law does not
-echo     permit waiver or exclusion.
-echo.
-echo Full Terms, Privacy Policy, Licence, Risk Notice and Trademark policy:
-echo   %LEGAL_URL%
-echo.
-echo IMPORTANT
-echo ------------------------------------------------------------------------
-echo Typing ACCEPT agrees to the general RescueMeAI legal terms.
-echo It does NOT authorize a destructive repair. Destructive actions require
-echo a separate, action-specific local authorization when RescueMeAI permits
-echo them.
-echo ------------------------------------------------------------------------
-echo Type exactly ACCEPT to agree and continue.
-echo Anything else stops RescueMeAI safely without starting recovery.
-echo.
+call :UI_LINE PROMPT "ACCEPT TERMS OF USE"
 set "TERMS_TYPED="
 set /p "TERMS_TYPED=ACCEPT TERMS OF USE: "
 if not "!TERMS_TYPED!"=="ACCEPT" (
@@ -159,8 +159,6 @@ call :WRITE_DETAILS
 
 rem -------------------------------------------------------------------------
 rem SECURE GITHUB APP DEVICE FLOW
-rem No classic OAuth scopes. repository_id narrows the user token to the
-rem configured private evidence/control repository.
 rem -------------------------------------------------------------------------
 set "STAGE=GITHUB_APP_DEVICE_CODE"
 set "COMPONENT=github.com/login/device/code"
@@ -189,24 +187,18 @@ if errorlevel 1 set "EXPIRES_IN=900"
 call :JSON_VALUE "%WORK%\github-device.json" "interval" POLL_INTERVAL
 if errorlevel 1 set "POLL_INTERVAL=5"
 
-call :HEADER 0B "SECURE GITHUB APP PAIRING" "REPAIR WRITE - AUTHORIZATION ONLY"
-call :CENTER "SECURE GITHUB APP PAIRING"
+call :UI_HEADER "SECURE GITHUB APP PAIRING" "REPAIR WRITE - AUTHORIZATION ONLY"
+call :UI_SECTION INFO "SECURE GITHUB APP PAIRING"
+call :UI_WRAP INFO "Private recovery evidence is restricted to %LOGREPO%."
+call :UI_SECTION INSTRUCTION "ON YOUR PHONE"
+call :UI_LINE INSTRUCTION "Open: !VERIFY_URI!"
+call :UI_LINE INSTRUCTION "Enter this one-time code:"
 echo.
-echo Private recovery evidence will be limited to:
-echo   %LOGREPO%
+call :UI_CENTER PROMPT "!USER_CODE!"
 echo.
-echo On your phone, open:
-echo   !VERIFY_URI!
-echo.
-echo Enter this one-time code:
-echo.
-call :CENTER "!USER_CODE!"
-echo.
-echo [WAITING] Approve the RescueMeAI authorization request on your phone.
-echo           This PC will continue automatically after approval.
-echo           Do not close this window.
-echo.
-echo Legal: %LEGAL_URL%
+call :UI_WRAP WARNING "[WAITING] Approve the RescueMeAI authorization request on your phone. This PC will continue automatically after approval. Do not close this window."
+call :UI_LINE LABEL "Legal repository: %LEGAL_BASE%"
+call :UI_LINE LABEL "Legal landing file: %LEGAL_FILE%"
 set "AUTH_STATUS=WAITING_FOR_USER"
 call :WRITE_DETAILS
 
@@ -233,7 +225,6 @@ if "!POLL_RC!"=="11" (
 )
 if not "!POLL_RC!"=="0" goto :FAIL
 
-rem Store the short-lived GitHub App user token and refresh token locally.
 >"%TOKENFILE%" echo(!ACCESS_TOKEN!
 attrib +h +s "%TOKENFILE%" >nul 2>&1
 if defined REFRESH_TOKEN (
@@ -253,9 +244,6 @@ set "REFRESH_TOKEN="
 set "AUTH_STATUS=AUTHORIZED"
 call :WRITE_DETAILS
 
-rem -------------------------------------------------------------------------
-rem PRIVATE REPORT PROOF
-rem -------------------------------------------------------------------------
 set "STAGE=PRIVATE_REPORT_UPLOAD"
 set "COMPONENT=private evidence upload"
 set "UPLOAD_STATUS=UPLOADING"
@@ -268,42 +256,28 @@ call :WRITE_REPORT PASS 0 "RescueMeAI private authenticated reporting is online.
 call :WRITE_DETAILS
 call :USB_COPY
 
-call :HEADER 0A "PRIVATE REPORTING ONLINE" "NO NEW ACTION"
-call :CENTER "[PASS] PRIVATE REPORTING ONLINE"
-echo.
-echo RESULT
-echo ------------------------------------------------------------------------
-echo RescueMeAI is paired successfully and can send authenticated private
-echo recovery reports to the configured evidence repository.
-echo.
-echo No Windows repair, boot, disk, partition, filesystem, or registry repair
-echo was performed by this pairing build.
-echo.
-echo WHAT YOU SHOULD DO
-echo   Reply to ChatGPT with exactly: pass
-echo.
-echo ADDITIONAL INFORMATION REQUIRED
-echo   None
-echo.
-echo ADDITIONAL INSTRUCTIONS
-echo   Do not rerun C:\wr.cmd unless RescueMeAI asks you to.
-echo ========================================================================
+call :UI_HEADER "PRIVATE REPORTING ONLINE" "NO NEW ACTION"
+call :UI_SECTION PASS "[PASS] PRIVATE REPORTING ONLINE"
+call :UI_WRAP PASS "RescueMeAI is paired successfully and can send authenticated private recovery reports to the configured evidence repository."
+call :UI_WRAP INFO "No Windows repair, boot, disk, partition, filesystem, or registry repair was performed by this pairing build."
+call :UI_SECTION INSTRUCTION "WHAT YOU SHOULD DO"
+call :UI_WRAP INSTRUCTION "Reply to ChatGPT with exactly: pass"
+call :UI_SECTION INFO "ADDITIONAL INFORMATION REQUIRED"
+call :UI_LINE INFO "None"
+call :UI_SECTION INSTRUCTION "ADDITIONAL INSTRUCTIONS"
+call :UI_WRAP INSTRUCTION "Do not rerun C:\wr.cmd unless RescueMeAI asks you to."
+call :UI_LINE MUTED "%UI_BORDER%"
 exit /b 0
 
 :WARNING
-call :HEADER 0E "TERMS NOT ACCEPTED" "NO RECOVERY ACTION"
-call :CENTER "[WARNING] RESCUEMEAI DID NOT START"
-echo.
-echo RESULT
-echo   The RescueMeAI Terms of Use were not accepted.
-echo   No authorization or recovery action was performed.
-echo.
-echo WHAT YOU SHOULD DO
-echo   Reply to ChatGPT with exactly: warning
-echo.
-echo ADDITIONAL INFORMATION REQUIRED
-echo   None
-echo ========================================================================
+call :UI_HEADER "TERMS NOT ACCEPTED" "NO RECOVERY ACTION"
+call :UI_SECTION WARNING "[WARNING] RESCUEMEAI DID NOT START"
+call :UI_WRAP WARNING "The RescueMeAI Terms of Use were not accepted. No authorization or recovery action was performed."
+call :UI_SECTION INSTRUCTION "WHAT YOU SHOULD DO"
+call :UI_WRAP INSTRUCTION "Reply to ChatGPT with exactly: warning"
+call :UI_SECTION INFO "ADDITIONAL INFORMATION REQUIRED"
+call :UI_LINE INFO "None"
+call :UI_LINE MUTED "%UI_BORDER%"
 pause >nul
 exit /b 40
 
@@ -311,69 +285,136 @@ exit /b 40
 call :WRITE_REPORT FAIL "!FAIL_RC!" "!FAIL_REASON!"
 call :WRITE_DETAILS
 call :USB_COPY
-call :HEADER 0C "SECURE PAIRING FAILED" "NO RECOVERY ACTION"
-call :CENTER "[FAIL] RESCUEMEAI SECURE PAIRING FAILED"
-echo.
-echo RESULT
-echo ------------------------------------------------------------------------
-echo Stage        : !STAGE!
-echo Component    : !COMPONENT!
-echo Return code  : !FAIL_RC!
-echo Component RC : !COMPONENT_RC!
-echo Terms        : !TERMS_STATUS!
-echo GitHub auth  : !AUTH_STATUS!
-echo Auth HTTP    : !AUTH_HTTP!
-echo Auth curl RC : !AUTH_CURL_RC!
-echo Report upload: !UPLOAD_STATUS!
-echo Upload HTTP  : !UPLOAD_HTTP!
-echo Upload curl  : !UPLOAD_CURL_RC!
-echo.
-echo Reason
-echo   !FAIL_REASON!
-echo.
-echo WHAT YOU SHOULD DO
-echo   Reply to ChatGPT with exactly: fail
-echo.
-echo ADDITIONAL INFORMATION REQUIRED
-echo   Screenshot this exact screen only if private reporting is not online.
-echo.
-echo Nothing destructive was attempted.
-echo ========================================================================
+call :UI_HEADER "SECURE PAIRING FAILED" "NO RECOVERY ACTION"
+call :UI_SECTION ERROR "[FAIL] RESCUEMEAI SECURE PAIRING FAILED"
+call :UI_LINE LABEL "Stage        : !STAGE!"
+call :UI_LINE LABEL "Component    : !COMPONENT!"
+call :UI_LINE ERROR "Return code  : !FAIL_RC!"
+call :UI_LINE ERROR "Component RC : !COMPONENT_RC!"
+call :UI_LINE LABEL "Terms        : !TERMS_STATUS!"
+call :UI_LINE LABEL "GitHub auth  : !AUTH_STATUS!"
+call :UI_LINE LABEL "Auth HTTP    : !AUTH_HTTP!"
+call :UI_LINE LABEL "Auth curl RC : !AUTH_CURL_RC!"
+call :UI_LINE LABEL "Report upload: !UPLOAD_STATUS!"
+call :UI_LINE LABEL "Upload HTTP  : !UPLOAD_HTTP!"
+call :UI_LINE LABEL "Upload curl  : !UPLOAD_CURL_RC!"
+call :UI_SECTION ERROR "REASON"
+call :UI_WRAP ERROR "!FAIL_REASON!"
+call :UI_SECTION INSTRUCTION "WHAT YOU SHOULD DO"
+call :UI_WRAP INSTRUCTION "Reply to ChatGPT with exactly: fail"
+call :UI_SECTION INFO "ADDITIONAL INFORMATION REQUIRED"
+call :UI_WRAP INFO "Screenshot this exact screen only if private reporting is not online."
+call :UI_WRAP WARNING "Nothing destructive was attempted."
+call :UI_LINE MUTED "%UI_BORDER%"
 pause >nul
 exit /b !FAIL_RC!
 
-:HEADER
-set "UI_COLOR=%~1"
-set "UI_STEP=%~2"
-set "UI_SAFETY=%~3"
-color %UI_COLOR% >nul 2>&1
+rem =========================================================================
+rem CENTRAL UI RENDERER
+rem =========================================================================
+:UI_SETUP
+"%MODE%" con: cols=100 lines=50 >nul 2>&1
+exit /b 0
+
+:UI_HEADER
+set "UI_STEP=%~1"
+set "UI_SAFETY=%~2"
 cls
-echo ========================================================================
-call :CENTER "RESCUEMEAI"
-call :CENTER "%DESCRIPTION%"
-echo ========================================================================
-echo  Version      : %COMMAND_VERSION%
-echo  Internet     : [%INTERNET_STATUS%]
-echo  Current Step : %UI_STEP%
-echo  Safety       : %UI_SAFETY%
-echo  Legal        : %LEGAL_URL%
-echo ========================================================================
-exit /b 0
-
-:CENTER
-set "CENTER_TEXT=%~1"
-set /a CENTER_LEN=0
-:CENTER_LEN_LOOP
-if not "!CENTER_TEXT:~%CENTER_LEN%,1!"=="" (
-  set /a CENTER_LEN+=1
-  if !CENTER_LEN! LSS 72 goto :CENTER_LEN_LOOP
+call :UI_LINE HEADER "%UI_BORDER%"
+call :UI_CENTER HEADER "RESCUEMEAI"
+call :UI_CENTER HEADER "%DESCRIPTION%"
+call :UI_LINE HEADER "%UI_BORDER%"
+call :UI_LINE LABEL "Version      : %COMMAND_VERSION%"
+if /i "%INTERNET_STATUS%"=="CONNECTED" (
+  call :UI_LINE PASS "Internet     : [CONNECTED]"
+) else if /i "%INTERNET_STATUS%"=="NOT CONNECTED" (
+  call :UI_LINE ERROR "Internet     : [NOT CONNECTED]"
+) else (
+  call :UI_LINE WARNING "Internet     : [%INTERNET_STATUS%]"
 )
-set /a CENTER_PAD=(72-CENTER_LEN)/2
-if !CENTER_PAD! LSS 0 set "CENTER_PAD=0"
-set "CENTER_SPACES=                                                                        "
-echo !CENTER_SPACES:~0,%CENTER_PAD%!!CENTER_TEXT!
+call :UI_LINE INFO "Current Step : !UI_STEP!"
+call :UI_LINE LABEL "Safety       : !UI_SAFETY!"
+call :UI_LINE LABEL "Legal        : %LEGAL_BASE%"
+call :UI_LINE LABEL "Legal file   : %LEGAL_FILE%"
+call :UI_LINE HEADER "%UI_BORDER%"
 exit /b 0
 
+:UI_SECTION
+echo.
+call :UI_LINE "%~1" "%~2"
+call :UI_LINE MUTED "%UI_RULE%"
+exit /b 0
+
+:UI_WRAP
+set "UI_WRAP_TYPE=%~1"
+set "UI_WRAP_TEXT=%~2"
+set "UI_WRAP_LINE="
+for %%W in (!UI_WRAP_TEXT!) do (
+  if not defined UI_WRAP_LINE (
+    set "UI_WRAP_LINE=%%W"
+  ) else (
+    set "UI_WRAP_CAND=!UI_WRAP_LINE! %%W"
+    call :STRLEN "!UI_WRAP_CAND!" UI_WRAP_LEN
+    if !UI_WRAP_LEN! GTR %UI_TEXT_WIDTH% (
+      call :UI_LINE "!UI_WRAP_TYPE!" "!UI_WRAP_LINE!"
+      set "UI_WRAP_LINE=%%W"
+    ) else (
+      set "UI_WRAP_LINE=!UI_WRAP_CAND!"
+    )
+  )
+)
+if defined UI_WRAP_LINE call :UI_LINE "!UI_WRAP_TYPE!" "!UI_WRAP_LINE!"
+if not defined UI_WRAP_LINE echo.
+exit /b 0
+
+:UI_CENTER
+set "UI_CENTER_TYPE=%~1"
+set "UI_CENTER_TEXT=%~2"
+call :STRLEN "!UI_CENTER_TEXT!" UI_CENTER_LEN
+set /a UI_CENTER_PAD=(UI_WIDTH-UI_CENTER_LEN)/2
+if !UI_CENTER_PAD! LSS 0 set "UI_CENTER_PAD=0"
+set "UI_CENTER_LINE=!UI_SPACES:~0,%UI_CENTER_PAD%!!UI_CENTER_TEXT!"
+call :UI_LINE "!UI_CENTER_TYPE!" "!UI_CENTER_LINE!"
+exit /b 0
+
+:UI_LINE
+rem This is the only semantic-to-color mapping in the bootstrap.
+set "UI_SEM=%~1"
+set "UI_TEXT=%~2"
+set "UI_ATTR=07"
+if /i "!UI_SEM!"=="HEADER" set "UI_ATTR=0B"
+if /i "!UI_SEM!"=="INFO" set "UI_ATTR=09"
+if /i "!UI_SEM!"=="PASS" set "UI_ATTR=0A"
+if /i "!UI_SEM!"=="SUCCESS" set "UI_ATTR=0A"
+if /i "!UI_SEM!"=="WARNING" set "UI_ATTR=0E"
+if /i "!UI_SEM!"=="ERROR" set "UI_ATTR=0C"
+if /i "!UI_SEM!"=="FAIL" set "UI_ATTR=0C"
+if /i "!UI_SEM!"=="INSTRUCTION" set "UI_ATTR=0F"
+if /i "!UI_SEM!"=="PROMPT" set "UI_ATTR=0D"
+if /i "!UI_SEM!"=="MUTED" set "UI_ATTR=08"
+if /i "!UI_SEM!"=="LABEL" set "UI_ATTR=07"
+call :STRLEN "!UI_TEXT!" UI_PRINT_LEN
+if !UI_PRINT_LEN! GTR %UI_WIDTH% set "UI_TEXT=!UI_TEXT:~0,%UI_WIDTH%!"
+>"%UI_TMP%" echo(!UI_TEXT!
+"%FINDSTR%" /a:!UI_ATTR! /r "^" "%UI_TMP%" 2>nul
+if errorlevel 1 echo(!UI_TEXT!
+del /f /q "%UI_TMP%" >nul 2>&1
+exit /b 0
+
+:STRLEN
+set "SL_TEXT=%~1"
+set /a SL_LEN=0
+:STRLEN_LOOP
+if not "!SL_TEXT:~%SL_LEN%,1!"=="" (
+  set /a SL_LEN+=1
+  if !SL_LEN! LSS 512 goto :STRLEN_LOOP
+)
+set "%~2=%SL_LEN%"
+exit /b 0
+
+rem =========================================================================
+rem RECOVERY / AUTH HELPERS
+rem =========================================================================
 :REQUIRE
 if exist "%~1" exit /b 0
 set "COMPONENT=%~2"
@@ -389,8 +430,6 @@ set "CURLERR=%WORK%\GITHUB_CURL_ERROR.txt"
 if exist "%DEVICE_JSON%" del /f /q "%DEVICE_JSON%" >nul 2>&1
 if exist "%DEVICE_HTTP_FILE%" del /f /q "%DEVICE_HTTP_FILE%" >nul 2>&1
 if exist "%CURLERR%" del /f /q "%CURLERR%" >nul 2>&1
-
-rem Prefer a cached github.com address, then try several DNS resolvers.
 set "DEVICE_OK=NO"
 if exist "%WORK%\github-web-ip.txt" (
   set "WEB_CAND="
@@ -402,8 +441,6 @@ for %%D in (64.71.255.204 1.1.1.1 8.8.8.8 9.9.9.9) do (
   if /i not "!DEVICE_OK!"=="YES" call :LOOKUP_AND_TRY_DEVICE "%%D"
 )
 if /i "!DEVICE_OK!"=="YES" exit /b 0
-
-rem Final attempt lets the WinRE resolver handle github.com directly.
 "%CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 15 --max-time 120 -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data "client_id=%GITHUB_APP_CLIENT_ID%" "https://github.com/login/device/code" -o "%DEVICE_JSON%" -w "%%{http_code}" >"%DEVICE_HTTP_FILE%" 2>"%CURLERR%"
 set "AUTH_CURL_RC=!errorlevel!"
 set "AUTH_HTTP="
@@ -562,14 +599,11 @@ set "UPLOADPATH=reports/inbox/pairing-%RANDOM%%RANDOM%.txt"
 >"%JSONFILE%" echo {"message":"RescueMeAI secure pairing report","content":"!B64!"}
 set "PUTURL=https://%APIHOST%/repos/%LOGREPO%/contents/!UPLOADPATH!"
 set "UPLOAD_OK=NO"
-
-rem Try the launcher's proven API IP first if available.
 if defined APIIP call :TRY_API_UPLOAD "!APIIP!"
 if /i "!UPLOAD_OK!"=="YES" (
   set "LOGTOKEN="
   exit /b 0
 )
-rem Then use a cached API IP if present.
 if exist "%WORK%\github-api-ip.txt" (
   set "API_CAND="
   set /p "API_CAND="<"%WORK%\github-api-ip.txt"
@@ -579,7 +613,6 @@ if /i "!UPLOAD_OK!"=="YES" (
   set "LOGTOKEN="
   exit /b 0
 )
-rem Then try fresh addresses from several DNS resolvers.
 for %%D in (64.71.255.204 1.1.1.1 8.8.8.8 9.9.9.9) do (
   if /i not "!UPLOAD_OK!"=="YES" call :LOOKUP_AND_TRY_API "%%D"
 )
@@ -587,7 +620,6 @@ if /i "!UPLOAD_OK!"=="YES" (
   set "LOGTOKEN="
   exit /b 0
 )
-rem Final fallback: normal WinRE DNS, matching the successful launcher path.
 "%CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 15 --max-time 120 -X PUT -H "Accept: application/vnd.github+json" -H "Authorization: Bearer !LOGTOKEN!" -H "X-GitHub-Api-Version: 2022-11-28" -H "Content-Type: application/json" --data-binary "@%JSONFILE%" -o "%RESPFILE%" -w "%%{http_code}" "!PUTURL!" >"%HTTPFILE%" 2>"%CURLERR%"
 set "UPLOAD_CURL_RC=!errorlevel!"
 set "UPLOAD_HTTP="
@@ -686,7 +718,8 @@ exit /b 0
 >>"%DETAILS%" echo private_report_upload=!UPLOAD_STATUS!
 >>"%DETAILS%" echo upload_http=!UPLOAD_HTTP!
 >>"%DETAILS%" echo upload_curl_rc=!UPLOAD_CURL_RC!
->>"%DETAILS%" echo legal_url=%LEGAL_URL%
+>>"%DETAILS%" echo legal_repository=%LEGAL_BASE%
+>>"%DETAILS%" echo legal_file=%LEGAL_FILE%
 >>"%DETAILS%" echo reason=!FAIL_REASON!
 exit /b 0
 
