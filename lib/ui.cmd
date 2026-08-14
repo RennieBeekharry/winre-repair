@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-rem WR-MODULE: ui 2026.08.14-1540-ET
+rem WR-MODULE: ui 2026.08.14-1545-ET
 rem RescueMeAI WinRE console renderer v2.
 rem Keep live recovery screens simple, stable, and operator-readable.
 
@@ -81,10 +81,13 @@ set "R_INTERNET=%~7"
 if not defined R_VERSION set "R_VERSION=UNKNOWN"
 if not defined R_INTERNET set "R_INTERNET=UNKNOWN"
 if not defined R_EVIDENCE set "R_EVIDENCE=None."
-if not defined R_INSTRUCTION set "R_INSTRUCTION=No action is required."
+if not defined R_INSTRUCTION set "R_INSTRUCTION=See the action required below."
 set "R_THEME=WARNING"
 if /i "%R_STATE%"=="PASS" set "R_THEME=PASS"
 if /i "%R_STATE%"=="FAIL" set "R_THEME=ERROR"
+set "R_REPLY=warning"
+if /i "%R_STATE%"=="PASS" set "R_REPLY=pass"
+if /i "%R_STATE%"=="FAIL" set "R_REPLY=fail"
 call :SETUP
 call :DRAW_HEADER "%R_VERSION%" "%R_INTERNET%" "%R_STATE%" "NO NEW ACTION" "%RMAI_UI_DESC%" "%R_THEME%"
 echo.
@@ -94,22 +97,28 @@ echo.
 echo WHAT HAPPENED
 echo   %R_MESSAGE%
 echo.
-echo WHAT YOU NEED TO DO
-echo   %R_INSTRUCTION%
-echo.
 if /i not "%R_EVIDENCE%"=="None." (
   echo DETAILS
   echo   %R_EVIDENCE%
   echo.
 )
+echo                              ACTION REQUIRED
+echo %RMAI_UI_RULE%
+echo.
+echo   On your phone, return to this ChatGPT conversation and send exactly:
+echo.
+echo                                %R_REPLY%
+echo.
+echo   Then leave this PC window open. RescueMeAI will stay online and wait
+echo   for the next recovery instruction from ChatGPT.
+echo.
 echo WHAT HAPPENS NEXT
-echo   RescueMeAI is still running.
-echo   PLEASE WAIT - no action is required from you right now.
-echo   RescueMeAI will continue automatically when the next recovery step is ready.
+echo   After you send %R_REPLY%, ChatGPT will review the private report and prepare
+echo   the next recovery step. You do not need to run C:\wr.cmd again.
 echo.
 echo SAFE STOP
-echo   Only while the screen says WAITING, press S once to stop RescueMeAI safely.
-echo   Do not close the window or press Ctrl+C while a recovery command is running.
+echo   If you intentionally want to stop RescueMeAI, wait until Status says WAITING,
+echo   then press S once. Do not close the window or press Ctrl+C during a command.
 echo.
 echo %RMAI_UI_BORDER%
 exit /b 0
