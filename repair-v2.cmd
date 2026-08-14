@@ -10,6 +10,7 @@ set "USBLOG=H:\RepairLogs"
 set "UPDATEID=33243991-754a-46d6-94da-794a9b757ba3"
 set "DNS=64.71.255.204"
 set "CURL=C:\Windows\System32\curl.exe"
+set "CURLTLS=--ssl-no-revoke"
 set "FINDSTR=C:\Windows\System32\findstr.exe"
 set "NSLOOKUP=C:\Windows\System32\nslookup.exe"
 set "REG=X:\Windows\System32\reg.exe"
@@ -38,6 +39,7 @@ if not exist "%PKG%" md "%PKG%" >nul 2>&1
 if exist "H:\" if not exist "%USBLOG%" md "%USBLOG%" >nul 2>&1
 >"%LOG%" echo [%date% %time%] START winre-repair v2
 call :LOG "Target: %OS%\Windows"
+call :LOG "WinRE TLS mode: certificate validation enabled; revocation lookup disabled because WinRE cannot reach revocation services"
 
 rem Verify the expected controller in the offline SYSTEM hive.
 %REG% unload HKLM\WR_SYS >nul 2>&1
@@ -76,7 +78,7 @@ if not defined CATIP (
 call :LOG "Catalog IP: !CATIP!"
 
 >"%WORK%\updateids.txt" echo [{"size":0,"updateID":"%UPDATEID%","uidInfo":"%UPDATEID%"}]
-%CURL% --fail --silent --show-error --connect-timeout 20 --max-time 120 --resolve "www.catalog.update.microsoft.com:443:!CATIP!" -X POST -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "updateIDs@%WORK%\updateids.txt" "https://www.catalog.update.microsoft.com/DownloadDialog.aspx" -o "%WORK%\catalog.html" >>"%LOG%" 2>&1
+%CURL% %CURLTLS% --fail --silent --show-error --connect-timeout 20 --max-time 120 --resolve "www.catalog.update.microsoft.com:443:!CATIP!" -X POST -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "updateIDs@%WORK%\updateids.txt" "https://www.catalog.update.microsoft.com/DownloadDialog.aspx" -o "%WORK%\catalog.html" >>"%LOG%" 2>&1
 if errorlevel 1 (
   set "FAILCODE=32"
   set "FAILMSG=Microsoft Update Catalog request failed."
@@ -104,7 +106,7 @@ call :LOG "Download host: !DLHOST! - !DLIP!"
 set "CAB=%WORK%\intel-16.7.1.1012.cab"
 echo(!CABURL!|%FINDSTR% /b /i "https://" >nul
 if not errorlevel 1 (
-  %CURL% --fail --location --retry 3 --connect-timeout 20 --max-time 900 --resolve "!DLHOST!:443:!DLIP!" "!CABURL!" -o "!CAB!" >>"%LOG%" 2>&1
+  %CURL% %CURLTLS% --fail --location --retry 3 --connect-timeout 20 --max-time 900 --resolve "!DLHOST!:443:!DLIP!" "!CABURL!" -o "!CAB!" >>"%LOG%" 2>&1
 ) else (
   %CURL% --fail --location --retry 3 --connect-timeout 20 --max-time 900 --resolve "!DLHOST!:80:!DLIP!" "!CABURL!" -o "!CAB!" >>"%LOG%" 2>&1
 )
