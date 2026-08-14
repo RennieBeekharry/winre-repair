@@ -2,8 +2,8 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem Active repair command. wr.cmd always downloads a fresh copy of this file.
-set "COMMAND_VERSION=WR-2026.08.14-0050-ET"
-set "BUILD_TIME=2026-08-14 00:50 ET"
+set "COMMAND_VERSION=WR-2026.08.14-0055-ET"
+set "BUILD_TIME=2026-08-14 00:55 ET"
 set "OS=C:"
 set "WORK=C:\WinRERepair"
 set "PKG=%WORK%\intel167"
@@ -19,6 +19,7 @@ set "DISM=X:\Windows\System32\dism.exe"
 set "EXPAND=X:\Windows\System32\expand.exe"
 set "WPEUTIL=X:\Windows\System32\wpeutil.exe"
 set "CAB=%WORK%\intel-16.7.1.1012.cab"
+set "DRIVERINFO=%WORK%\candidate-driver-info.txt"
 
 cls
 echo ================================================================
@@ -75,7 +76,7 @@ if errorlevel 1 (
   goto :FAIL
 )
 
-rem Obtain the Microsoft Catalog CAB URL.
+rem Obtain the Microsoft Catalog CAB URL for the exact approved update ID.
 call :RESOLVE www.catalog.update.microsoft.com CATIP
 if not defined CATIP set "CATIP=20.165.94.49"
 call :LOG "Catalog IP: !CATIP!"
@@ -96,7 +97,7 @@ if not defined CABURL (
 )
 call :LOG "Catalog driver URL: !CABURL!"
 
-rem IMPORTANT: FOR /F collapses repeated '/' delimiters, so token 2 is the host.
+rem FOR /F collapses repeated '/' delimiters, so token 2 is the host.
 for /f "tokens=2 delims=/" %%H in ("!CABURL!") do set "DLHOST=%%H"
 if not defined DLHOST (
   set "FAILCODE=34"
@@ -107,15 +108,12 @@ call :LOG "Download host: !DLHOST!"
 
 if exist "%CAB%" del /f /q "%CAB%" >nul 2>&1
 if exist "%CAB%.tmp" del /f /q "%CAB%.tmp" >nul 2>&1
-
 call :RESOLVE !DLHOST! DLIP
 if defined DLIP (
   call :LOG "Resolved download IP: !DLIP!"
   call :TRYDOWNLOAD !DLIP!
 )
 
-rem Safe fallback addresses for Microsoft's Windows Update CDN. The true
-rem hostname is preserved in TLS/SNI via --resolve.
 if not exist "%CAB%" (
   for %%I in (152.195.19.97 23.32.75.16 152.199.39.108 152.199.21.175 2.16.168.54 2.20.245.170) do (
     if not exist "%CAB%" (
@@ -130,7 +128,6 @@ if not exist "%CAB%" (
   set "FAILMSG=Driver CAB download failed after resolved and CDN fallback attempts."
   goto :FAIL
 )
-
 for %%Z in ("%CAB%") do call :LOG "Driver CAB downloaded: %%~zZ bytes"
 
 if exist "%PKG%\*" del /q "%PKG%\*" >nul 2>&1
@@ -141,40 +138,57 @@ if errorlevel 1 (
   goto :FAIL
 )
 
-rem FINDSTR defaults to regex mode. Hardware IDs contain backslashes, so use
-rem /L for a literal exact-text check. Require both the exact AHCI hardware ID
-rem and the expected Microsoft Catalog driver version in the same INF.
+rem Do not parse the INF text directly. Ask DISM to interpret the candidate
+rem package and report its normalized metadata, including Hardware ID and
+rem DriverVer. This avoids FINDSTR/INF encoding problems.
 set "MATCHINF="
-for /r "%PKG%" %%F in (*.inf) do (
-  %FINDSTR% /l /i /c:"PCI\VEN_8086&DEV_A102&CC_0106" "%%F" >nul 2>&1
-  if not errorlevel 1 (
-    %FINDSTR% /l /i /c:"16.7.1.1012" "%%F" >nul 2>&1
-    if not errorlevel 1 if not defined MATCHINF set "MATCHINF=%%F"
-  )
-)
+for /r "%PKG%" %%F in (iaAHCIC.inf) do if not defined MATCHINF set "MATCHINF=%%F"
 if not defined MATCHINF (
-  call :LOG "No INF contained both the exact DEV_A102 AHCI ID and expected driver version"
-  for /r "%PKG%" %%F in (*.inf) do (
-    call :LOG "INF candidate: %%F"
-    %FINDSTR% /l /i /c:"DEV_A102" "%%F" >>"%LOG%" 2>&1
-    %FINDSTR% /l /i /c:"DriverVer" "%%F" >>"%LOG%" 2>&1
-  )
   set "FAILCODE=41"
-  set "FAILMSG=Downloaded package validation failed for DEV_A102 or driver version. Installation refused."
+  set "FAILMSG=Expected iaAHCIC.inf was not present in the Microsoft package. Installation refused."
   goto :FAIL
 )
-call :LOG "Verified matching INF: !MATCHINF!"
-%FINDSTR% /l /i /c:"PCI\VEN_8086&DEV_A102&CC_0106" "!MATCHINF!" >>"%LOG%" 2>&1
-%FINDSTR% /l /i /c:"DriverVer" "!MATCHINF!" >>"%LOG%" 2>&1
+call :LOG "Candidate INF: !MATCHINF!"
+if exist "%DRIVERINFO%" del /f /q "%DRIVERINFO%" >nul 2>&1
+%DISM% /Image:%OS%\ /Get-DriverInfo /Driver:"!MATCHINF!" /English /Format:List /LogPath:"%WORK%\dism-candidate-driver.log" >"%DRIVERINFO%" 2>&1
+if errorlevel 1 (
+  type "%DRIVERINFO%" >>"%LOG%" 2>&1
+  set "FAILCODE=42"
+  set "FAILMSG=DISM could not inspect the candidate Intel driver. Installation refused."
+  goto :FAIL
+)
+type "%DRIVERINFO%" >>"%LOG%"
 
+%FINDSTR% /l /i /c:"PCI\VEN_8086&DEV_A102&CC_0106" "%DRIVERINFO%" >nul 2>&1
+if errorlevel 1 (
+  set "FAILCODE=43"
+  set "FAILMSG=DISM metadata does not list the exact DEV_A102 AHCI hardware ID. Installation refused."
+  goto :FAIL
+)
+%FINDSTR% /l /i /c:"16.7.1.1012" "%DRIVERINFO%" >nul 2>&1
+if errorlevel 1 (
+  set "FAILCODE=44"
+  set "FAILMSG=DISM metadata does not report expected driver version 16.7.1.1012. Installation refused."
+  goto :FAIL
+)
+%FINDSTR% /l /i /c:"amd64" "%DRIVERINFO%" >nul 2>&1
+if errorlevel 1 (
+  set "FAILCODE=45"
+  set "FAILMSG=DISM metadata does not report AMD64 support. Installation refused."
+  goto :FAIL
+)
+call :LOG "DISM validation passed: DEV_A102, version 16.7.1.1012, AMD64"
+
+rem Add only this verified INF. Do not use /ForceUnsigned; x64 signature
+rem enforcement remains active.
 call :LOG "Adding verified signed Intel driver INF to offline Windows"
-%DISM% /Image:%OS%\ /Add-Driver /Driver:"!MATCHINF!" /LogPath:"%WORK%\dism-add-driver.log" >>"%LOG%" 2>&1
+%DISM% /Image:%OS%\ /Add-Driver /Driver:"!MATCHINF!" /English /LogPath:"%WORK%\dism-add-driver.log" >>"%LOG%" 2>&1
 if errorlevel 1 (
   set "FAILCODE=50"
   set "FAILMSG=DISM could not add the verified Intel storage driver."
   goto :FAIL
 )
-%DISM% /Image:%OS%\ /Get-Drivers /All /Format:Table /LogPath:"%WORK%\dism-driver-inventory.log" >>"%LOG%" 2>&1
+%DISM% /Image:%OS%\ /Get-Drivers /All /English /Format:Table /LogPath:"%WORK%\dism-driver-inventory.log" >>"%LOG%" 2>&1
 
 call :LOG "SUCCESS - verified signed Intel storage driver package added"
 call :COPYLOGS
@@ -228,6 +242,8 @@ exit /b 0
 if exist "H:\" (
   if not exist "%USBLOG%" md "%USBLOG%" >nul 2>&1
   copy /y "%LOG%" "%USBLOG%\winre-repair.log" >nul 2>&1
+  if exist "%DRIVERINFO%" copy /y "%DRIVERINFO%" "%USBLOG%\candidate-driver-info.txt" >nul 2>&1
+  if exist "%WORK%\dism-candidate-driver.log" copy /y "%WORK%\dism-candidate-driver.log" "%USBLOG%\dism-candidate-driver.log" >nul 2>&1
   if exist "%WORK%\dism-add-driver.log" copy /y "%WORK%\dism-add-driver.log" "%USBLOG%\dism-add-driver.log" >nul 2>&1
   if exist "%WORK%\dism-driver-inventory.log" copy /y "%WORK%\dism-driver-inventory.log" "%USBLOG%\dism-driver-inventory.log" >nul 2>&1
 )
