@@ -2,13 +2,13 @@
 setlocal EnableExtensions EnableDelayedExpansion
 rem WR_RISK=REPAIR_WRITE
 rem WR_LOCAL_AUTH=NOT_REQUIRED
-rem WR_SUMMARY=Restart the paired RescueMeAI agent with visible startup activity, safe source fallback, clear result instructions, and the DoH resolver.
+rem WR_SUMMARY=Restart the paired RescueMeAI agent with visible startup activity, roadmap/readiness/progress UI, safe source fallback, clear result instructions, and the DoH resolver.
 rem WR_ACTION=START_RESCUEMEAI_AGENT_VISIBLE_RUNTIME
 rem WR_TARGET=RescueMeAI runtime modules and private command channel only.
 rem WR_CONSEQUENCE=Refreshes RescueMeAI application modules. It does not modify Windows recovery state.
 rem WR_ROLLBACK=Stop RescueMeAI safely while waiting and return to Command Prompt.
 
-set "COMMAND_VERSION=RMAI-2026.08.14-AGENT-START-7"
+set "COMMAND_VERSION=RMAI-2026.08.14-AGENT-START-8"
 set "WORK=C:\WinRERepair"
 set "RUNTIME=%WORK%\runtime"
 set "TOKENFILE=%WORK%\.auth\github-logs.token"
@@ -21,7 +21,7 @@ if not exist "%MODE%" set "MODE=mode"
 set "APIHOST=api.github.com"
 set "DOHHOST=cloudflare-dns.com"
 set "SOURCE_REPO=RennieBeekharry/winre-repair"
-set "SOURCE_REF=7fa6b98369c2f2db6c01bf96555d07b3be048281"
+set "SOURCE_REF=ac588e73a037954e623eec39685d7c82dc284a03"
 set "LOG_REPO=RennieBeekharry/winre-repair-logs"
 set "LOG_REPO_ID=1333818657"
 set "GITHUB_APP_ID=4595411"
@@ -74,8 +74,8 @@ if errorlevel 1 (
 :API_READY
 >"%WORK%\github-api-ip.txt" echo(!APIIP!
 
-call :SHOW_ACTIVITY "Loading interface" "Updating the RescueMeAI result and status screens."
-call :FETCH_SOURCE "lib/ui.cmd" "%RUNTIME%\ui.cmd" "WR-MODULE: ui 2026.08.14-1545-ET"
+call :SHOW_ACTIVITY "Loading recovery interface" "Updating the roadmap, readiness, progress, result and status screens."
+call :FETCH_SOURCE "lib/ui.cmd" "%RUNTIME%\ui.cmd" "WR-MODULE: ui 2026.08.14-1825-ET"
 if errorlevel 1 goto :APP_FATAL
 call :SHOW_ACTIVITY "Loading network module" "Preparing resilient GitHub and recovery-source downloads."
 call :FETCH_SOURCE "lib/network.cmd" "%RUNTIME%\network.cmd" "WR-MODULE: network 2026.08.14-1605-ET"
@@ -116,16 +116,16 @@ echo %UI_BORDER%
 echo                               RESCUEMEAI
 echo                       AI-ASSISTED WINDOWS RECOVERY
 echo %UI_BORDER%
-echo Version        : %COMMAND_VERSION%
-echo Internet       : [CONNECTED]
-echo Status         : READY TO CONTINUE
-echo Windows changes: NONE
+echo Version         : %COMMAND_VERSION%
+echo Internet        : [CONNECTED]
+echo Status          : READY TO CONTINUE
+echo Windows changes : NONE
 echo %UI_BORDER%
 echo.
 echo                              ACTION REQUIRED
 echo %UI_RULE%
 echo.
-echo RescueMeAI is ready to continue the recovery-media workflow.
+echo RescueMeAI is ready to resume the saved recovery session.
 echo Nothing is being changed on Windows right now.
 echo.
 echo TO CONTINUE:
@@ -138,8 +138,8 @@ echo.
 echo        TYPE: STOP
 echo        THEN press the ENTER key.
 echo.
-echo After starting, leave this window open. RescueMeAI will show each meaningful
-echo recovery stage so you can see that work is continuing.
+echo After starting, leave this window open. RescueMeAI will show meaningful
+echo recovery milestones, readiness status and measurable task progress.
 echo.
 set "START_INPUT="
 set /p "START_INPUT=Waiting for you: "
@@ -161,10 +161,10 @@ set "MARK=%~3"
 set "TMP=%DEST%.tmp"
 set "URL=https://%APIHOST%/repos/%SOURCE_REPO%/contents/%SRC%?ref=%SOURCE_REF%"
 if exist "%TMP%" del /f /q "%TMP%" >nul 2>&1
-"%CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --resolve "%APIHOST%:443:%APIIP%" -H "Accept: application/vnd.github.raw+json" -H "Authorization: Bearer %AUTH_TOKEN%" -H "X-GitHub-Api-Version: 2022-11-28" -H "Cache-Control: no-cache, no-store, max-age=0" "%URL%" -o "%TMP%" 2>"%WORK%\START7_CURL_ERROR.txt"
+"%CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --resolve "%APIHOST%:443:%APIIP%" -H "Accept: application/vnd.github.raw+json" -H "Authorization: Bearer %AUTH_TOKEN%" -H "X-GitHub-Api-Version: 2022-11-28" -H "Cache-Control: no-cache, no-store, max-age=0" "%URL%" -o "%TMP%" 2>"%WORK%\START8_CURL_ERROR.txt"
 if errorlevel 1 (
   if exist "%TMP%" del /f /q "%TMP%" >nul 2>&1
-  "%CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --resolve "%APIHOST%:443:%APIIP%" -H "Accept: application/vnd.github.raw+json" -H "Cache-Control: no-cache, no-store, max-age=0" "%URL%" -o "%TMP%" 2>"%WORK%\START7_CURL_ERROR.txt"
+  "%CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --resolve "%APIHOST%:443:%APIIP%" -H "Accept: application/vnd.github.raw+json" -H "Cache-Control: no-cache, no-store, max-age=0" "%URL%" -o "%TMP%" 2>"%WORK%\START8_CURL_ERROR.txt"
 )
 if errorlevel 1 (
   set "FAIL_RC=90"
@@ -200,8 +200,8 @@ exit /b 1
 
 :TRY_DOH_A
 set "DOHIP=%~1"
-set "DOHJSON=%WORK%\start7-doh.json"
-set "DOHHTTP=%WORK%\start7-doh-http.txt"
+set "DOHJSON=%WORK%\start8-doh.json"
+set "DOHHTTP=%WORK%\start8-doh-http.txt"
 if exist "%DOHJSON%" del /f /q "%DOHJSON%" >nul 2>&1
 "%CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 10 --max-time 45 --resolve "%DOHHOST%:443:%DOHIP%" -H "Accept: application/dns-json" "https://%DOHHOST%/dns-query?name=%DOH_QUERY_HOST%&type=A" -o "%DOHJSON%" -w "%%{http_code}" >"%DOHHTTP%" 2>nul
 if errorlevel 1 exit /b 0
@@ -236,9 +236,9 @@ echo %UI_BORDER%
 echo                               RESCUEMEAI
 echo                       AI-ASSISTED WINDOWS RECOVERY
 echo %UI_BORDER%
-echo Version        : %COMMAND_VERSION%
-echo Status         : WORKING
-echo Windows changes: NONE
+echo Version         : %COMMAND_VERSION%
+echo Status          : WORKING
+echo Windows changes : NONE
 echo %UI_BORDER%
 echo.
 echo CURRENT ACTIVITY
