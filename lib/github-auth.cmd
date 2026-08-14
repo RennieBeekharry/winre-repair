@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-rem WR-MODULE: github-auth 2026.08.14-1163-ET
+rem WR-MODULE: github-auth 2026.08.14-1164-ET
 rem Pure CMD + curl implementation for WinRE. No cscript/JScript dependency.
 
 if /i "%~1"=="authorize" goto :AUTHORIZE
@@ -29,20 +29,44 @@ set "WR_GA_CLIENTID="
 
 if not exist "%WR_GA_WORK%" md "%WR_GA_WORK%" >nul 2>&1
 if not exist "%WR_GA_AUTHDIR%" md "%WR_GA_AUTHDIR%" >nul 2>&1
-if not exist "%WR_GA_CURL%" call :RESULT FAIL "Required curl.exe is missing." LOCAL "" 91 & exit /b 91
-if not exist "%WR_GA_CERTUTIL%" call :RESULT FAIL "Required certutil.exe is missing." LOCAL "" 91 & exit /b 91
-if not exist "%WR_GA_FINDSTR%" call :RESULT FAIL "Required findstr.exe is missing." LOCAL "" 91 & exit /b 91
-if not exist "%WR_GA_CONFIG%" call :RESULT FAIL "AI Recovery configuration is missing." LOCAL "" 91 & exit /b 91
+if not exist "%WR_GA_CURL%" (
+  call :RESULT FAIL "Required curl.exe is missing." LOCAL "" 91
+  exit /b 91
+)
+if not exist "%WR_GA_CERTUTIL%" (
+  call :RESULT FAIL "Required certutil.exe is missing." LOCAL "" 91
+  exit /b 91
+)
+if not exist "%WR_GA_FINDSTR%" (
+  call :RESULT FAIL "Required findstr.exe is missing." LOCAL "" 91
+  exit /b 91
+)
+if not exist "%WR_GA_CONFIG%" (
+  call :RESULT FAIL "RescueMeAI configuration is missing." LOCAL "" 91
+  exit /b 91
+)
 if exist "%WR_GA_WORK%\github-api-ip.txt" set /p "WR_GA_APIIP="<"%WR_GA_WORK%\github-api-ip.txt"
 if exist "%WR_GA_WORK%\github-web-ip.txt" set /p "WR_GA_WEBIP="<"%WR_GA_WORK%\github-web-ip.txt"
 for /f "usebackq tokens=1,* delims==" %%A in ("%WR_GA_CONFIG%") do (
   if /i "%%A"=="LOG_REPO" set "WR_GA_LOGREPO=%%B"
   if /i "%%A"=="OAUTH_CLIENT_ID" set "WR_GA_CLIENTID=%%B"
 )
-if not defined WR_GA_LOGREPO call :RESULT FAIL "LOG_REPO configuration is missing." LOCAL "" 91 & exit /b 91
-if not defined WR_GA_CLIENTID call :RESULT FAIL "OAuth client ID configuration is missing." LOCAL "" 91 & exit /b 91
-if not defined WR_GA_APIIP call :RESULT FAIL "Validated api.github.com address is unavailable." LOCAL "" 92 & exit /b 92
-if not defined WR_GA_WEBIP call :RESULT FAIL "Validated github.com address is unavailable." LOCAL "" 92 & exit /b 92
+if not defined WR_GA_LOGREPO (
+  call :RESULT FAIL "LOG_REPO configuration is missing." LOCAL "" 91
+  exit /b 91
+)
+if not defined WR_GA_CLIENTID (
+  call :RESULT FAIL "OAuth client ID configuration is missing." LOCAL "" 91
+  exit /b 91
+)
+if not defined WR_GA_APIIP (
+  call :RESULT FAIL "Validated api.github.com address is unavailable." LOCAL "" 92
+  exit /b 92
+)
+if not defined WR_GA_WEBIP (
+  call :RESULT FAIL "Validated github.com address is unavailable." LOCAL "" 92
+  exit /b 92
+)
 exit /b 0
 
 :AUTHORIZE
@@ -53,7 +77,7 @@ rem Reuse an existing token only if it can still upload a private report.
 if exist "%WR_GA_TOKEN%" (
   call :UPLOAD_INTERNAL "bootstrap-existing"
   if not errorlevel 1 exit /b 0
-  del /f /q "%WR_GA_TOKEN%" >nul 2>&1
+  del /f /q /a "%WR_GA_TOKEN%" >nul 2>&1
 )
 
 set "DEVICE_JSON=%WR_GA_WORK%\github-device.json"
@@ -76,9 +100,15 @@ if not "!DEVICE_HTTP_CODE!"=="200" (
 )
 
 call :JSON_VALUE "%DEVICE_JSON%" "device_code" DEVICE_CODE
-if errorlevel 1 call :RESULT FAIL "GitHub device response did not contain device_code." "!DEVICE_HTTP_CODE!" "" 90 & exit /b 90
+if errorlevel 1 (
+  call :RESULT FAIL "GitHub device response did not contain device_code." "!DEVICE_HTTP_CODE!" "" 90
+  exit /b 90
+)
 call :JSON_VALUE "%DEVICE_JSON%" "user_code" USER_CODE
-if errorlevel 1 call :RESULT FAIL "GitHub device response did not contain user_code." "!DEVICE_HTTP_CODE!" "" 90 & exit /b 90
+if errorlevel 1 (
+  call :RESULT FAIL "GitHub device response did not contain user_code." "!DEVICE_HTTP_CODE!" "" 90
+  exit /b 90
+)
 call :JSON_VALUE "%DEVICE_JSON%" "verification_uri" VERIFY_URI
 if errorlevel 1 set "VERIFY_URI=https://github.com/login/device"
 call :JSON_VALUE "%DEVICE_JSON%" "expires_in" EXPIRES_IN
@@ -241,13 +271,13 @@ set "JV_RET=%~3"
 set "JV_LINE="
 set "JV_TAIL="
 set "JV_VALUE="
-for /f "usebackq delims=" %%L in (`"%WR_GA_FINDSTR%" /i /c:"\"%JV_KEY%\"" "%JV_FILE%" 2^>nul`) do set "JV_LINE=%%L"
+for /f "usebackq delims=" %%L in (`"%WR_GA_FINDSTR%" /i /c:"%JV_KEY%" "%JV_FILE%" 2^>nul`) do set "JV_LINE=%%L"
 if not defined JV_LINE exit /b 1
-set "JV_TAIL=!JV_LINE:*\"%JV_KEY%\"=!"
+set "JV_TAIL=!JV_LINE:*%JV_KEY%=!"
 set "JV_TAIL=!JV_TAIL:*:=!"
 for /f "tokens=1 delims=," %%V in ("!JV_TAIL!") do set "JV_VALUE=%%V"
 for /f "tokens=*" %%V in ("!JV_VALUE!") do set "JV_VALUE=%%V"
-set "JV_VALUE=!JV_VALUE:\"=!"
+set "JV_VALUE=!JV_VALUE:"=!"
 set "JV_VALUE=!JV_VALUE:}=!"
 if not defined JV_VALUE exit /b 1
 set "%JV_RET%=%JV_VALUE%"
@@ -259,8 +289,6 @@ if not defined SLEEP_SECONDS set "SLEEP_SECONDS=5"
 if exist "%WR_GA_PING%" (
   set /a "SLEEP_PINGS=SLEEP_SECONDS+1" >nul 2>&1
   "%WR_GA_PING%" -n !SLEEP_PINGS! 127.0.0.1 >nul 2>&1
-) else (
-  rem Fallback busy wait is intentionally avoided; poll again immediately.
 )
 exit /b 0
 
