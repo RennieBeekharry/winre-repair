@@ -1,8 +1,8 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-set "COMMAND_VERSION=WR-2026.08.14-0907-ET"
-set "BUILD_TIME=2026-08-14 09:07 ET"
+set "COMMAND_VERSION=WR-2026.08.14-0915-ET"
+set "BUILD_TIME=2026-08-14 09:15 ET"
 set "WORK=C:\WinRERepair"
 set "CURL=C:\Windows\System32\curl.exe"
 set "NSLOOKUP=C:\Windows\System32\nslookup.exe"
@@ -19,11 +19,11 @@ set "DNS=64.71.255.204"
 set "UUPAPIHOST=api.uupdump.net"
 set "UUPID=44ac3fa1-0cef-463b-a650-6240d396f894"
 set "UUPBUILD=26100.8894"
-set "UUPAPIURL=https://api.uupdump.net/get.php?id=%UUPID%&lang=en-us&edition=core"
+set "UUPAPIURL=https://api.uupdump.net/get.php?id=%UUPID%^&lang=en-us^&edition=core"
 
-set "GHAPIHOST=api.github.com"
-set "HELPERURL=https://api.github.com/repos/RennieBeekharry/winre-repair/contents/uup-download.js?ref=main"
-set "RECOVERYMANIFESTURL=https://api.github.com/repos/RennieBeekharry/winre-repair/contents/RECOVERY_MANIFEST.md?ref=main"
+set "RAWHOST=raw.githubusercontent.com"
+set "RAWHELPERURL=https://raw.githubusercontent.com/RennieBeekharry/winre-repair/main/uup-download.js?cb=%RANDOM%%RANDOM%"
+set "RAWMANIFESTURL=https://raw.githubusercontent.com/RennieBeekharry/winre-repair/main/RECOVERY_MANIFEST.md?cb=%RANDOM%%RANDOM%"
 
 set "BOOTVOL="
 set "DATAVOL="
@@ -32,7 +32,6 @@ set "DATACOUNT=0"
 set "OFFEDITION=UNKNOWN"
 set "OFFLANG=UNKNOWN"
 set "APIIP="
-set "GHIP="
 
 cls
 echo ================================================================
@@ -53,7 +52,7 @@ if not exist "%FINDSTR%" goto :TOOLSFAIL
 if not exist "%CERTUTIL%" goto :TOOLSFAIL
 if not exist "%CSCRIPT%" goto :TOOLSFAIL
 
-rem Locate the completed USB volumes by their unique labels. No disk-number access.
+rem Locate the completed USB volumes by their unique labels only.
 for %%D in (D E F G H I J K L M N O P Q R S T U V W Y Z) do (
   if exist %%D:\ (
     vol %%D: >"%WORK%\vol-%%D.txt" 2>&1
@@ -87,6 +86,10 @@ set "LANGLOG=!DEST!\offline-language.txt"
 if not exist "!DEST!" md "!DEST!" >nul 2>&1
 if not exist "!UUPDIR!" md "!UUPDIR!" >nul 2>&1
 
+rem Keep a recovery history on the USB. Failure to refresh it does not block download.
+call :FETCHRAW "%RAWMANIFESTURL%" "!LOCALMANIFEST!"
+if errorlevel 1 call :WRITELOCALMANIFEST
+
 rem Read-only identity validation of the offline Windows installation.
 if exist "%DISM%" if exist "C:\Windows\System32\Config\SYSTEM" (
   "%DISM%" /Image:C:\ /Get-CurrentEdition /English >"!EDITIONLOG!" 2>&1
@@ -108,23 +111,25 @@ if errorlevel 1 (
 )
 if errorlevel 1 goto :NETFAIL
 
-rem Fetch the current recovery manifest and the small JSON downloader helper from
-rem this repository through GitHub's API. These are text/code only; neither can
-rem perform disk layout or filesystem creation.
-call :RESOLVE %GHAPIHOST% GHIP
-if defined GHIP (
-  "%CURL%" --ssl-no-revoke --fail --silent --show-error --connect-timeout 20 --max-time 120 --resolve "%GHAPIHOST%:443:!GHIP!" -H "Accept: application/vnd.github.raw+json" -H "Cache-Control: no-cache, no-store, max-age=0" "%RECOVERYMANIFESTURL%" -o "!LOCALMANIFEST!"
-  "%CURL%" --ssl-no-revoke --fail --silent --show-error --connect-timeout 20 --max-time 120 --resolve "%GHAPIHOST%:443:!GHIP!" -H "Accept: application/vnd.github.raw+json" -H "Cache-Control: no-cache, no-store, max-age=0" "%HELPERURL%" -o "!HELPER!"
-) else (
-  "%CURL%" --ssl-no-revoke --fail --silent --show-error --connect-timeout 20 --max-time 120 -H "Accept: application/vnd.github.raw+json" -H "Cache-Control: no-cache, no-store, max-age=0" "%RECOVERYMANIFESTURL%" -o "!LOCALMANIFEST!"
-  "%CURL%" --ssl-no-revoke --fail --silent --show-error --connect-timeout 20 --max-time 120 -H "Accept: application/vnd.github.raw+json" -H "Cache-Control: no-cache, no-store, max-age=0" "%HELPERURL%" -o "!HELPER!"
+rem Reuse a previously validated helper. If absent/invalid, fetch the static helper
+rem from raw GitHub with cache-busting and explicit DNS/IP resolution. This avoids
+rem consuming a separate GitHub Contents API request from WinRE.
+set "HELPEROK=0"
+if exist "!HELPER!" (
+  "%FINDSTR%" /i /c:"WinRE-safe UUP dump JSON downloader" "!HELPER!" >nul 2>&1
+  if not errorlevel 1 set "HELPEROK=1"
 )
-if not exist "!HELPER!" goto :HELPERFAIL
-"%FINDSTR%" /i /c:"WinRE-safe UUP dump JSON downloader" "!HELPER!" >nul 2>&1
-if errorlevel 1 goto :HELPERFAIL
+if "!HELPEROK!"=="0" (
+  if exist "!HELPER!" del /f /q "!HELPER!" >nul 2>&1
+  call :FETCHRAW "%RAWHELPERURL%" "!HELPER!"
+  if not errorlevel 1 (
+    "%FINDSTR%" /i /c:"WinRE-safe UUP dump JSON downloader" "!HELPER!" >nul 2>&1
+    if not errorlevel 1 set "HELPEROK=1"
+  )
+)
+if "!HELPEROK!"=="0" goto :HELPERFAIL
 
-rem Correct automated endpoint: the official UUP dump JSON API. It returns a
-rem response object containing build, arch, and per-file Microsoft URLs/SHA-1s.
+rem Official UUP dump JSON API. It supplies Microsoft UUP URLs, SHA-1 and sizes.
 call :RESOLVE %UUPAPIHOST% APIIP
 if defined APIIP (
   "%CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 20 --max-time 300 --resolve "%UUPAPIHOST%:443:!APIIP!" "%UUPAPIURL%" -o "!JSON!"
@@ -195,6 +200,43 @@ echo Take ONE photo of this screen and send it to ChatGPT.
 echo ================================================================
 exit /b !DLRC!
 
+:FETCHRAW
+set "FETCHURL=%~1"
+set "FETCHOUT=%~2"
+set "RAWIP="
+call :RESOLVE %RAWHOST% RAWIP
+if exist "%FETCHOUT%.tmp" del /f /q "%FETCHOUT%.tmp" >nul 2>&1
+if defined RAWIP (
+  "%CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 20 --max-time 180 --resolve "%RAWHOST%:443:!RAWIP!" "%FETCHURL%" -o "%FETCHOUT%.tmp"
+) else (
+  "%CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 20 --max-time 180 "%FETCHURL%" -o "%FETCHOUT%.tmp"
+)
+if errorlevel 1 (
+  if exist "%FETCHOUT%.tmp" del /f /q "%FETCHOUT%.tmp" >nul 2>&1
+  exit /b 1
+)
+for %%Z in ("%FETCHOUT%.tmp") do if %%~zZ LSS 32 (
+  del /f /q "%FETCHOUT%.tmp" >nul 2>&1
+  exit /b 1
+)
+move /y "%FETCHOUT%.tmp" "%FETCHOUT%" >nul 2>&1
+exit /b 0
+
+:WRITELOCALMANIFEST
+>"!LOCALMANIFEST!" echo Windows Recovery Manifest - local fallback
+>>"!LOCALMANIFEST!" echo Current failure: INACCESSIBLE_BOOT_DEVICE 0x7B
+>>"!LOCALMANIFEST!" echo Current Windows: Home/Core 24H2 x64, offline build 26100.9168
+>>"!LOCALMANIFEST!" echo Current storage binding: iaStorA
+>>"!LOCALMANIFEST!" echo PASS: disk readable, direct boot-file reads pass, NTFS clean, read-only CHKDSK clean
+>>"!LOCALMANIFEST!" echo PASS: Intel 16.7.1.1012 signed DEV_A102 package staged
+>>"!LOCALMANIFEST!" echo FAIL: iaStorA to iaStorAC reversible binding test did not resolve 0x7B; rolled back
+>>"!LOCALMANIFEST!" echo PASS: WIN11MEDIA FAT32 and REPAIRDATA NTFS recovery USB created
+>>"!LOCALMANIFEST!" echo FAIL: UUP interactive website endpoint was the wrong automation endpoint
+>>"!LOCALMANIFEST!" echo FAIL: build 0907 could not obtain the separate GitHub-API helper
+>>"!LOCALMANIFEST!" echo NEXT: official UUP JSON API; SHA-1 verify Microsoft UUP files; convert; boot fresh media; targeted offline repair
+>>"!LOCALMANIFEST!" echo POLICY: no disk clean, format, repartition, or filesystem creation in active workflow
+exit /b 0
+
 :CHECKNET
 "%PING%" -n 1 -w 2000 1.1.1.1 >nul 2>&1
 if not errorlevel 1 exit /b 0
@@ -215,7 +257,7 @@ exit /b 0
 set "WHY=Official UUP JSON API did not return the expected 26100.8894 amd64 response."
 goto :EARLYFAIL
 :HELPERFAIL
-set "WHY=Verified UUP JSON downloader helper could not be obtained."
+set "WHY=Static UUP JSON downloader helper could not be validated after local reuse/raw fallback."
 goto :EARLYFAIL
 :WINDOWSFAIL
 set "WHY=Offline Windows identity did not match Core/en-US. Detected !OFFEDITION!/!OFFLANG!."
