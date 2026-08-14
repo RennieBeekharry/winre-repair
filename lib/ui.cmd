@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-rem WR-MODULE: ui 2026.08.14-1305-ET
+rem WR-MODULE: ui 2026.08.14-1320-ET
 rem Central RescueMeAI console renderer for WinRE.
 rem All user-facing colors are selected here by semantic message type.
 
@@ -11,8 +11,9 @@ set "RMAI_UI_WIDTH=96"
 set "RMAI_UI_TEXT_WIDTH=92"
 set "RMAI_UI_BORDER================================================================================================="
 set "RMAI_UI_SPACES=                                                                                                    "
-set "RMAI_UI_FINDSTR=C:\Windows\System32\findstr.exe"
-if not exist "%RMAI_UI_FINDSTR%" set "RMAI_UI_FINDSTR=findstr.exe"
+set "RMAI_UI_CMD=%ComSpec%"
+if not defined RMAI_UI_CMD set "RMAI_UI_CMD=X:\Windows\System32\cmd.exe"
+if not exist "%RMAI_UI_CMD%" set "RMAI_UI_CMD=C:\Windows\System32\cmd.exe"
 set "RMAI_UI_MODE=C:\Windows\System32\mode.com"
 if not exist "%RMAI_UI_MODE%" set "RMAI_UI_MODE=mode"
 set "RMAI_UI_TMP=%TEMP%\rmai-ui-%RANDOM%%RANDOM%.txt"
@@ -163,6 +164,8 @@ exit /b 0
 
 :PAINT
 rem PAINT is the only color-selection function.
+rem WinRE on the active test machine ignored FINDSTR /A coloring, so output
+rem is emitted by a short child CMD process using CMD /T:<color> instead.
 set "UI_SEM=%~1"
 set "UI_TEXT=%~2"
 set "UI_ATTR=07"
@@ -180,8 +183,8 @@ if /i "!UI_SEM!"=="LABEL" set "UI_ATTR=07"
 call :STRLEN "!UI_TEXT!" UI_PRINT_LEN
 if !UI_PRINT_LEN! GTR %RMAI_UI_WIDTH% set "UI_TEXT=!UI_TEXT:~0,%RMAI_UI_WIDTH%!"
 >"%RMAI_UI_TMP%" echo(!UI_TEXT!
-"%RMAI_UI_FINDSTR%" /a:!UI_ATTR! /r "^" "%RMAI_UI_TMP%" 2>nul
-if errorlevel 1 echo(!UI_TEXT!
+"%RMAI_UI_CMD%" /d /q /t:!UI_ATTR! /c type "%RMAI_UI_TMP%" 2>nul
+if errorlevel 1 type "%RMAI_UI_TMP%"
 del /f /q "%RMAI_UI_TMP%" >nul 2>&1
 exit /b 0
 
