@@ -8,7 +8,7 @@ rem WR_TARGET=RescueMeAI recovery tooling and private command channel only.
 rem WR_CONSEQUENCE=Refreshes RescueMeAI runtime modules before the listener starts.
 rem WR_ROLLBACK=Stop RescueMeAI safely while waiting. No Windows recovery action runs here.
 
-set "COMMAND_VERSION=RMAI-2026.08.14-AGENT-START-4"
+set "COMMAND_VERSION=RMAI-2026.08.14-AGENT-START-5"
 set "WORK=C:\WinRERepair"
 set "RUNTIME=%WORK%\runtime"
 set "TOKEN=%WORK%\.auth\github-logs.token"
@@ -63,25 +63,45 @@ echo Status         : READY TO START
 echo Windows changes: NONE
 echo %UI_BORDER%
 echo.
-echo                        READY TO CONTINUE RECOVERY
+echo                         ACTION REQUIRED
 echo %UI_RULE%
 echo.
-echo RescueMeAI is paired and the private support channel is working.
+echo RescueMeAI is ready to continue your recovery session.
+echo Nothing is being changed on Windows right now.
 echo.
-echo Press ENTER to start RescueMeAI.
-echo It will refresh its own UI/safety modules, stay online, and let ChatGPT
-echo continue diagnosis automatically.
+echo TO START RESCUEMEAI:
 echo.
-echo While the screen says WAITING, press S at any time to stop safely.
+echo        PRESS THE ENTER KEY ONCE
+echo        Do NOT type the word ENTER.
+echo.
+echo TO CANCEL AND RETURN TO COMMAND PROMPT:
+echo.
+echo        TYPE: STOP
+echo        THEN press the ENTER key.
+echo.
+echo %UI_RULE%
+echo After RescueMeAI starts, leave this window open.
+echo While the screen says WAITING, press S to stop safely.
 echo Destructive Windows actions still require separate LOCAL approval.
 echo.
-echo   [ENTER]  START RESCUEMEAI
-echo   [STOP]   RETURN TO COMMAND PROMPT
-echo.
 set "START_INPUT="
-set /p "START_INPUT=Your choice: "
+set /p "START_INPUT=Waiting for you: "
 if /i "!START_INPUT!"=="STOP" goto :USER_EXIT
-if defined START_INPUT goto :MENU
+if /i "!START_INPUT!"=="ENTER" (
+  echo.
+  echo Do not type ENTER. Press the ENTER key by itself with no text entered.
+  echo Press any key to try again.
+  pause >nul
+  goto :MENU
+)
+if defined START_INPUT (
+  echo.
+  echo That is not a valid response.
+  echo Press ENTER with no text to start, or type STOP and then press ENTER to cancel.
+  echo Press any key to try again.
+  pause >nul
+  goto :MENU
+)
 
 call "%AGENT%"
 set "AGENT_RC=!errorlevel!"
