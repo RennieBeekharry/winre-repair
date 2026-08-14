@@ -1,166 +1,100 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-set "COMMAND_VERSION=WR-2026.08.14-0340-ET"
-set "BUILD_TIME=2026-08-14 03:40 ET"
+set "COMMAND_VERSION=WR-2026.08.14-0345-ET"
+set "BUILD_TIME=2026-08-14 03:45 ET"
 set "WORK=C:\WinRERepair"
 set "DISKPART=X:\Windows\System32\diskpart.exe"
 set "FINDSTR=C:\Windows\System32\findstr.exe"
-set "TARGET_LABEL=WINREPAIR"
-set "EXPECTED_DISK_ID=E0BF3720"
-set "EXPECTED_USB_DISK=1"
-set "EXPECTED_OS_DISK=0"
-set "EXPECTED_USB_SIZE=114 GB"
-set "SCAN=%WORK%\usb-erase-preflight-0340.txt"
-set "USBDETAIL=%WORK%\usb-erase-candidate-0340.txt"
-set "OSDETAIL=%WORK%\usb-erase-windows-disk-0340.txt"
-set "DPSCRIPT=%WORK%\usb-media-layout-0340.txt"
-set "DPOUT=%WORK%\usb-media-layout-out-0340.txt"
-set "USBDISK="
-set "OSDISK="
-set "USBMATCH=0"
-set "OSMATCH=0"
-set "SAFE=NO"
+set "OLDOUT=%WORK%\usb-media-layout-out-0340.txt"
+set "SCAN=%WORK%\usb-postformat-scan-0345.txt"
+set "D1=%WORK%\usb-disk1-postformat-0345.txt"
+set "D0=%WORK%\windows-disk0-postformat-0345.txt"
+set "VOLS=%WORK%\volumes-postformat-0345.txt"
+set "PARTS=%WORK%\partitions-postformat-0345.txt"
+set "UFOUND=NO"
+set "VFOUND=NO"
+set "WIN11FOUND=NO"
+set "REPAIRFOUND=NO"
+set "DISK1USB=UNKNOWN"
+set "DISK0C=UNKNOWN"
+set "OLDERROR=UNKNOWN"
 
 cls
 echo ================================================================
-echo WINRE-REPAIR - VERIFIED USB MEDIA PARTITIONING
+echo WINRE-REPAIR - USB POST-FORMAT DIAGNOSTIC
 echo Version: %COMMAND_VERSION%
 echo Built:   %BUILD_TIME%
 echo Fetched: %date% %time%
+echo Mode:    READ-ONLY - NO CLEAN / FORMAT / PARTITION CHANGES
 echo ================================================================
-echo.
-echo DESTRUCTIVE ACTION: only the previously verified WINREPAIR USB may be erased.
-echo Required fingerprint:
-echo   Physical disk : %EXPECTED_USB_DISK%
-echo   Type          : USB
-echo   Disk ID       : %EXPECTED_DISK_ID%
-echo   Volume        : WINREPAIR / Removable / %EXPECTED_USB_SIZE%
-echo   Windows disk  : %EXPECTED_OS_DISK%
-echo.
 
 if not exist "%WORK%" md "%WORK%" >nul 2>&1
-if not exist "%DISKPART%" goto :FAIL
-if not exist "C:\Windows\System32\Config\SYSTEM" goto :FAIL
-if exist U:\ goto :FAIL_LETTER
-if exist V:\ goto :FAIL_LETTER
-if exist "%USBDETAIL%" del /f /q "%USBDETAIL%" >nul 2>&1
-if exist "%OSDETAIL%" del /f /q "%OSDETAIL%" >nul 2>&1
+if not exist "%DISKPART%" goto :SUMMARY
 
-rem Re-identify both disks from scratch. Disk number alone is never sufficient.
-for /L %%D in (0,1,15) do (
-  >"%SCAN%" echo select disk %%D
-  >>"%SCAN%" echo detail disk
-  "%DISKPART%" /s "%SCAN%" >"%WORK%\erase-disk-%%D-detail-0340.txt" 2>&1
+rem Inspect current Disk 1 state.
+>"%SCAN%" echo select disk 1
+>>"%SCAN%" echo detail disk
+"%DISKPART%" /s "%SCAN%" >"%D1%" 2>&1
+"%FINDSTR%" /i /c:"Type" "%D1%" 2>nul | "%FINDSTR%" /i /c:"USB" >nul 2>&1
+if not errorlevel 1 set "DISK1USB=YES"
 
-  "%FINDSTR%" /i /c:"%TARGET_LABEL%" "%WORK%\erase-disk-%%D-detail-0340.txt" >nul 2>&1
-  if not errorlevel 1 (
-    set /a USBMATCH+=1
-    set "USBDISK=%%D"
-    copy /y "%WORK%\erase-disk-%%D-detail-0340.txt" "%USBDETAIL%" >nul 2>&1
-  )
+rem Independently verify Windows still belongs to Disk 0.
+>"%SCAN%" echo select disk 0
+>>"%SCAN%" echo detail disk
+"%DISKPART%" /s "%SCAN%" >"%D0%" 2>&1
+"%FINDSTR%" /i /c:"Volume" "%D0%" 2>nul | "%FINDSTR%" /R /C:"[ ]C[ ]" >nul 2>&1
+if not errorlevel 1 set "DISK0C=YES"
 
-  "%FINDSTR%" /i /c:"Volume" "%WORK%\erase-disk-%%D-detail-0340.txt" 2>nul | "%FINDSTR%" /R /C:"[ ]C[ ]" >nul 2>&1
-  if not errorlevel 1 (
-    set /a OSMATCH+=1
-    set "OSDISK=%%D"
-    copy /y "%WORK%\erase-disk-%%D-detail-0340.txt" "%OSDETAIL%" >nul 2>&1
-  )
+rem List current volumes and Disk 1 partitions.
+>"%SCAN%" echo list volume
+"%DISKPART%" /s "%SCAN%" >"%VOLS%" 2>&1
+>"%SCAN%" echo select disk 1
+>>"%SCAN%" echo list partition
+"%DISKPART%" /s "%SCAN%" >"%PARTS%" 2>&1
+
+"%FINDSTR%" /R /C:"[ ]U[ ]" "%VOLS%" >nul 2>&1
+if not errorlevel 1 set "UFOUND=YES"
+"%FINDSTR%" /R /C:"[ ]V[ ]" "%VOLS%" >nul 2>&1
+if not errorlevel 1 set "VFOUND=YES"
+"%FINDSTR%" /i /c:"WIN11MEDIA" "%VOLS%" >nul 2>&1
+if not errorlevel 1 set "WIN11FOUND=YES"
+"%FINDSTR%" /i /c:"REPAIRDATA" "%VOLS%" >nul 2>&1
+if not errorlevel 1 set "REPAIRFOUND=YES"
+
+rem Classify the saved DiskPart output from the failed destructive run.
+if exist "%OLDOUT%" (
+  "%FINDSTR%" /i /c:"error" /c:"failed" /c:"not supported" /c:"too big" /c:"incorrect" /c:"cannot" /c:"could not" "%OLDOUT%" >nul 2>&1
+  if not errorlevel 1 (set "OLDERROR=ERROR_TEXT_FOUND") else (set "OLDERROR=NO_ERROR_TEXT_FOUND")
+) else (
+  set "OLDERROR=PREVIOUS_OUTPUT_MISSING"
 )
 
-rem Fail closed unless the exact previously observed topology is present.
-if not "!USBMATCH!"=="1" goto :FAIL
-if not "!OSMATCH!"=="1" goto :FAIL
-if not "!USBDISK!"=="%EXPECTED_USB_DISK%" goto :FAIL
-if not "!OSDISK!"=="%EXPECTED_OS_DISK%" goto :FAIL
-if "!USBDISK!"=="!OSDISK!" goto :FAIL
-if "!USBDISK!"=="0" goto :FAIL
-if not exist "%USBDETAIL%" goto :FAIL
-
-rem Literal fingerprint checks. No Disk ID parsing is used.
-"%FINDSTR%" /i /c:"%EXPECTED_DISK_ID%" "%USBDETAIL%" >nul 2>&1
-if errorlevel 1 goto :FAIL
-"%FINDSTR%" /i /c:"Type" "%USBDETAIL%" 2>nul | "%FINDSTR%" /i /c:"USB" >nul 2>&1
-if errorlevel 1 goto :FAIL
-"%FINDSTR%" /i /c:"%TARGET_LABEL%" "%USBDETAIL%" 2>nul | "%FINDSTR%" /i /c:"Removable" >nul 2>&1
-if errorlevel 1 goto :FAIL
-"%FINDSTR%" /i /c:"%TARGET_LABEL%" "%USBDETAIL%" 2>nul | "%FINDSTR%" /i /c:"114 GB" >nul 2>&1
-if errorlevel 1 goto :FAIL
-
-rem Re-prove Windows C: is on Disk 0 and not on the USB candidate.
-if not exist "%OSDETAIL%" goto :FAIL
-"%FINDSTR%" /i /c:"Volume" "%OSDETAIL%" 2>nul | "%FINDSTR%" /R /C:"[ ]C[ ]" >nul 2>&1
-if errorlevel 1 goto :FAIL
-
-set "SAFE=YES"
-echo ================================================================
-echo PREFLIGHT PASSED
-echo USB physical disk : !USBDISK!
-echo USB disk ID       : %EXPECTED_DISK_ID%
-echo Windows disk      : !OSDISK!
-echo ================================================================
-echo Erasing ONLY the verified USB and creating media partitions...
-
-rem Destructive commands begin here, after all identity checks above pass.
->"%DPSCRIPT%" echo select disk !USBDISK!
->>"%DPSCRIPT%" echo clean
->>"%DPSCRIPT%" echo convert gpt
->>"%DPSCRIPT%" echo create partition primary size=30000
->>"%DPSCRIPT%" echo format fs=fat32 quick label=WIN11MEDIA
->>"%DPSCRIPT%" echo assign letter=U
->>"%DPSCRIPT%" echo create partition primary
->>"%DPSCRIPT%" echo format fs=ntfs quick label=REPAIRDATA
->>"%DPSCRIPT%" echo assign letter=V
->>"%DPSCRIPT%" echo list volume
->>"%DPSCRIPT%" echo detail disk
-
-"%DISKPART%" /s "%DPSCRIPT%" >"%DPOUT%" 2>&1
-if errorlevel 1 goto :FORMAT_FAIL
-
-if not exist U:\ goto :FORMAT_FAIL
-if not exist V:\ goto :FORMAT_FAIL
-vol U: | "%FINDSTR%" /i /c:"WIN11MEDIA" >nul 2>&1
-if errorlevel 1 goto :FORMAT_FAIL
-vol V: | "%FINDSTR%" /i /c:"REPAIRDATA" >nul 2>&1
-if errorlevel 1 goto :FORMAT_FAIL
-
+:SUMMARY
 cls
 echo ================================================================
-echo USB MEDIA LAYOUT READY
+echo USB POST-FORMAT SNAPSHOT
 echo Version: %COMMAND_VERSION%
 echo ================================================================
-echo Verified erased disk : !USBDISK!  [USB]
-echo Verified old disk ID : %EXPECTED_DISK_ID%
-echo Windows disk         : !OSDISK!  [NOT TOUCHED]
-echo Boot partition       : U:  WIN11MEDIA  FAT32  ~30 GB
-echo Repair-data partition: V:  REPAIRDATA   NTFS   remaining space
+echo Disk 1 still reports USB : %DISK1USB%
+echo Windows C still on Disk 0: %DISK0C%
+echo U: volume present        : %UFOUND%
+echo V: volume present        : %VFOUND%
+echo WIN11MEDIA label present : %WIN11FOUND%
+echo REPAIRDATA label present : %REPAIRFOUND%
+echo Previous DiskPart output : %OLDERROR%
 echo ---------------------------------------------------------------
-echo NEXT: download/build Windows 11 24H2 repair media files.
+echo Current Disk 1 volumes:
+"%FINDSTR%" /i /c:"Volume" "%D1%" 2>nul
+echo ---------------------------------------------------------------
+echo Current Disk 1 partitions:
+"%FINDSTR%" /i /c:"Partition" "%PARTS%" 2>nul
+echo ---------------------------------------------------------------
+if exist "%OLDOUT%" (
+  echo Relevant lines from failed DiskPart run:
+  "%FINDSTR%" /i /c:"DiskPart successfully" /c:"error" /c:"failed" /c:"not supported" /c:"too big" /c:"incorrect" /c:"cannot" /c:"could not" "%OLDOUT%" 2>nul
+)
 echo ================================================================
+echo NO DISK CHANGES WERE MADE BY THIS DIAGNOSTIC.
 echo Take ONE photo of this screen and send it to ChatGPT.
 exit /b 0
-
-:FAIL_LETTER
-set "MSG=Drive letter U: or V: is already in use. USB was not erased."
-goto :FAIL_MSG
-
-:FORMAT_FAIL
-set "MSG=The verified USB was selected, but partitioning or format verification failed."
-goto :FAIL_MSG
-
-:FAIL
-set "MSG=USB identity preflight did not exactly match the verified fingerprint. Nothing was erased."
-
-:FAIL_MSG
-cls
-echo ================================================================
-echo USB MEDIA STAGE STOPPED
-echo %MSG%
-echo ================================================================
-echo Candidate disk : !USBDISK!
-echo Expected USB   : Disk %EXPECTED_USB_DISK% / ID %EXPECTED_DISK_ID% / %EXPECTED_USB_SIZE%
-echo Windows disk  : !OSDISK!  [expected %EXPECTED_OS_DISK%]
-echo USB matches   : !USBMATCH!
-echo OS matches    : !OSMATCH!
-echo ================================================================
-exit /b 90
