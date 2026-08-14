@@ -8,7 +8,7 @@ rem WR_TARGET=Recovery tooling under C:\WinRERepair only; no Windows boot files 
 rem WR_CONSEQUENCE=Updates recovery tooling, records Terms acceptance, and establishes a repository-scoped outbound GitHub App credential.
 rem WR_ROLLBACK=Tooling and local authorization files can be removed later; no operating-system recovery changes are performed.
 
-set "COMMAND_VERSION=RMAI-2026.08.14-SECURE-PAIRING-1"
+set "COMMAND_VERSION=RMAI-2026.08.14-SECURE-PAIRING-2"
 set "PRODUCT=RescueMeAI"
 set "WORK=C:\WinRERepair"
 set "RUNTIME=%WORK%\runtime"
@@ -33,6 +33,11 @@ set "AUTH=%RUNTIME%\github-auth.cmd"
 set "ACCEPTANCE=%RUNTIME%\acceptance.cmd"
 set "RESOLVER_URL=https://%APIHOST%/repos/%SOURCE_REPO%/contents/lib/resolve.cmd?ref=%SOURCE_REF%"
 set "BOOTSTRAP_URL=https://%APIHOST%/repos/%SOURCE_REPO%/contents/lib/runtime-sync.cmd?ref=%SOURCE_REF%"
+
+rem The persistent launcher just resolved/fetched next.cmd successfully.
+rem Preserve that fresh API address as the first candidate before this
+rem child batch establishes its own local variables.
+set "LAUNCHER_APIIP=%APIIP%"
 
 set "STAGE=START"
 set "COMPONENT=next.cmd"
@@ -85,10 +90,14 @@ echo ================================================================
 
 set "STAGE=PRECHECK"
 set "COMPONENT=required WinRE tools"
-if not exist "%CURL%" set "COMPONENT=curl.exe"& set "COMPONENT_RC=91"& set "FAIL_RC=91"& set "FAIL_REASON=Required curl.exe was not found."& goto :FAIL
-if not exist "%FINDSTR%" set "COMPONENT=findstr.exe"& set "COMPONENT_RC=91"& set "FAIL_RC=91"& set "FAIL_REASON=Required findstr.exe was not found."& goto :FAIL
-if not exist "%NSLOOKUP%" set "COMPONENT=nslookup.exe"& set "COMPONENT_RC=91"& set "FAIL_RC=91"& set "FAIL_REASON=Required nslookup.exe was not found."& goto :FAIL
-if not exist "%CERTUTIL%" set "COMPONENT=certutil.exe"& set "COMPONENT_RC=91"& set "FAIL_RC=91"& set "FAIL_REASON=Required certutil.exe was not found."& goto :FAIL
+call :REQUIRE "%CURL%" "curl.exe"
+if errorlevel 1 goto :FAIL
+call :REQUIRE "%FINDSTR%" "findstr.exe"
+if errorlevel 1 goto :FAIL
+call :REQUIRE "%NSLOOKUP%" "nslookup.exe"
+if errorlevel 1 goto :FAIL
+call :REQUIRE "%CERTUTIL%" "certutil.exe"
+if errorlevel 1 goto :FAIL
 
 set "STAGE=NETWORK_INITIALIZE"
 set "COMPONENT=WinRE network"
@@ -99,14 +108,20 @@ if exist "%PING%" (
   ) else (
     if exist "%WPEUTIL%" "%WPEUTIL%" InitializeNetwork >nul 2>&1
     "%PING%" -n 1 -w 3000 1.1.1.1 >nul 2>&1
-    if not errorlevel 1 (set "NETWORK_STATE=ONLINE") else set "NETWORK_STATE=PARTIAL_OR_ICMP_BLOCKED"
+    if not errorlevel 1 (
+      set "NETWORK_STATE=ONLINE"
+    ) else (
+      set "NETWORK_STATE=PARTIAL_OR_ICMP_BLOCKED"
+    )
   )
-) else set "NETWORK_STATE=PING_UNAVAILABLE"
+) else (
+  set "NETWORK_STATE=PING_UNAVAILABLE"
+)
 call :WRITE_DETAILS
 
 set "STAGE=RESOLVE_API_GITHUB"
 set "COMPONENT=api.github.com"
-call :RESOLVE_HOST "%APIHOST%" APIIP
+call :RESOLVE_HOST "%APIHOST%" APIIP "%LAUNCHER_APIIP%"
 if errorlevel 1 (
   set "API_HTTPS=FAIL"
   set "COMPONENT_RC=92"
@@ -119,7 +134,7 @@ set "API_HTTPS=PASS"
 
 set "STAGE=RESOLVE_GITHUB_WEB"
 set "COMPONENT=github.com"
-call :RESOLVE_HOST "%WEBHOST%" WEBIP
+call :RESOLVE_HOST "%WEBHOST%" WEBIP ""
 if errorlevel 1 (
   set "WEB_HTTPS=FAIL"
   set "COMPONENT_RC=92"
@@ -142,9 +157,19 @@ if not "!FETCHRC!"=="0" (
   goto :FAIL
 )
 "%FINDSTR%" /i /c:"WR-MODULE: resolve" "%RESOLVER%.tmp" >nul 2>&1
-if errorlevel 1 set "COMPONENT_RC=96"& set "FAIL_RC=96"& set "FAIL_REASON=Downloaded resolver failed module validation."& goto :FAIL
+if errorlevel 1 (
+  set "COMPONENT_RC=96"
+  set "FAIL_RC=96"
+  set "FAIL_REASON=Downloaded resolver failed module validation."
+  goto :FAIL
+)
 move /y "%RESOLVER%.tmp" "%RESOLVER%" >nul 2>&1
-if errorlevel 1 set "COMPONENT_RC=97"& set "FAIL_RC=97"& set "FAIL_REASON=Validated resolver could not be staged."& goto :FAIL
+if errorlevel 1 (
+  set "COMPONENT_RC=97"
+  set "FAIL_RC=97"
+  set "FAIL_REASON=Validated resolver could not be staged."
+  goto :FAIL
+)
 
 set "STAGE=FETCH_RUNTIME_SYNC"
 set "COMPONENT=lib/runtime-sync.cmd"
@@ -157,9 +182,19 @@ if not "!FETCHRC!"=="0" (
   goto :FAIL
 )
 "%FINDSTR%" /i /c:"WR-MODULE: runtime-sync" "%BOOTSTRAP%.tmp" >nul 2>&1
-if errorlevel 1 set "COMPONENT_RC=96"& set "FAIL_RC=96"& set "FAIL_REASON=Downloaded runtime synchronizer failed module validation."& goto :FAIL
+if errorlevel 1 (
+  set "COMPONENT_RC=96"
+  set "FAIL_RC=96"
+  set "FAIL_REASON=Downloaded runtime synchronizer failed module validation."
+  goto :FAIL
+)
 move /y "%BOOTSTRAP%.tmp" "%BOOTSTRAP%" >nul 2>&1
-if errorlevel 1 set "COMPONENT_RC=97"& set "FAIL_RC=97"& set "FAIL_REASON=Validated runtime synchronizer could not be staged."& goto :FAIL
+if errorlevel 1 (
+  set "COMPONENT_RC=97"
+  set "FAIL_RC=97"
+  set "FAIL_REASON=Validated runtime synchronizer could not be staged."
+  goto :FAIL
+)
 
 set "STAGE=RUNTIME_SYNC"
 set "COMPONENT=lib/runtime-sync.cmd"
@@ -212,7 +247,12 @@ set "COMPONENT=agent.cfg"
 >>"%CONFIG%" echo GITHUB_APP_CLIENT_ID=Iv23lif9UoXW4QvUh8tJ
 >>"%CONFIG%" echo GITHUB_REPOSITORY_ID=1333818657
 >>"%CONFIG%" echo POLL_SECONDS=15
-if not exist "%CONFIG%" set "COMPONENT_RC=97"& set "FAIL_RC=97"& set "FAIL_REASON=Could not write the local RescueMeAI configuration."& goto :FAIL
+if not exist "%CONFIG%" (
+  set "COMPONENT_RC=97"
+  set "FAIL_RC=97"
+  set "FAIL_REASON=Could not write the local RescueMeAI configuration."
+  goto :FAIL
+)
 
 set "STAGE=GITHUB_APP_AUTHORIZATION"
 set "COMPONENT=lib/github-auth.cmd"
@@ -335,6 +375,14 @@ echo ================================================================
 pause >nul
 exit /b 40
 
+:REQUIRE
+if exist "%~1" exit /b 0
+set "COMPONENT=%~2"
+set "COMPONENT_RC=91"
+set "FAIL_RC=91"
+set "FAIL_REASON=Required %~2 was not found."
+exit /b 1
+
 :FETCH
 set "FETCH_URL=%~1"
 set "FETCH_OUT=%~2"
@@ -349,17 +397,28 @@ exit /b 0
 :RESOLVE_HOST
 set "RH_HOST=%~1"
 set "RH_RET=%~2"
+set "RH_SEED=%~3"
 set "RH_FOUND="
 set "RH_CAND="
 set "RH_CACHE="
-if /i "%RH_HOST%"=="api.github.com" set "RH_CACHE=%WORK%\github-api-ip.txt"
-if /i "%RH_HOST%"=="github.com" set "RH_CACHE=%WORK%\github-web-ip.txt"
-if defined RH_CACHE if exist "%RH_CACHE%" (
-  set /p "RH_CAND="<"%RH_CACHE%"
-  if defined RH_CAND call :TEST_HOST
+if defined RH_SEED (
+  set "RH_CAND=%RH_SEED%"
+  call :TEST_HOST
   if not errorlevel 1 set "RH_FOUND=!RH_CAND!"
 )
-for %%D in (64.71.255.204 1.1.1.1 8.8.8.8 9.9.9.9) do if not defined RH_FOUND call :LOOKUP_HOST "%%D"
+if /i "%RH_HOST%"=="api.github.com" set "RH_CACHE=%WORK%\github-api-ip.txt"
+if /i "%RH_HOST%"=="github.com" set "RH_CACHE=%WORK%\github-web-ip.txt"
+if not defined RH_FOUND if defined RH_CACHE if exist "%RH_CACHE%" (
+  set "RH_CAND="
+  set /p "RH_CAND="<"%RH_CACHE%"
+  if defined RH_CAND (
+    call :TEST_HOST
+    if not errorlevel 1 set "RH_FOUND=!RH_CAND!"
+  )
+)
+for %%D in (64.71.255.204 1.1.1.1 8.8.8.8 9.9.9.9) do (
+  if not defined RH_FOUND call :LOOKUP_HOST "%%D"
+)
 if not defined RH_FOUND exit /b 92
 set "%RH_RET%=%RH_FOUND%"
 exit /b 0
@@ -414,6 +473,7 @@ exit /b 0
 >>"%DETAILS%" echo component=!COMPONENT!
 >>"%DETAILS%" echo component_return_code=!COMPONENT_RC!
 >>"%DETAILS%" echo network_state=!NETWORK_STATE!
+>>"%DETAILS%" echo launcher_api_ip=!LAUNCHER_APIIP!
 >>"%DETAILS%" echo api_github_ip=!APIIP!
 >>"%DETAILS%" echo api_github_https=!API_HTTPS!
 >>"%DETAILS%" echo github_web_ip=!WEBIP!
