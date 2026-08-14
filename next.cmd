@@ -2,8 +2,8 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem Active repair command. wr.cmd always downloads a fresh copy of this file.
-set "COMMAND_VERSION=WR-2026.08.14-0041-ET"
-set "BUILD_TIME=2026-08-14 00:41 ET"
+set "COMMAND_VERSION=WR-2026.08.14-0045-ET"
+set "BUILD_TIME=2026-08-14 00:45 ET"
 set "OS=C:"
 set "WORK=C:\WinRERepair"
 set "PKG=%WORK%\intel167"
@@ -42,10 +42,8 @@ if not exist "%CURL%" (
 if not exist "%WORK%" md "%WORK%" >nul 2>&1
 if not exist "%PKG%" md "%PKG%" >nul 2>&1
 if exist "H:\" if not exist "%USBLOG%" md "%USBLOG%" >nul 2>&1
->"%LOG%" echo [%date% %time%] START %COMMAND_VERSION% built %BUILD_TIME%
-call :LOG "Version: %COMMAND_VERSION%"
-call :LOG "Build time: %BUILD_TIME%"
-call :LOG "Fetched/executed: %date% %time%"
+>"%LOG%" echo [%date% %time%] START %COMMAND_VERSION%
+call :LOG "Build: %BUILD_TIME%"
 call :LOG "Target: %OS%\Windows"
 call :LOG "GitHub command channel active"
 
@@ -77,9 +75,9 @@ if errorlevel 1 (
   goto :FAIL
 )
 
-rem Obtain the current Microsoft Catalog CAB URL.
+rem Obtain the Microsoft Catalog CAB URL.
 call :RESOLVE www.catalog.update.microsoft.com CATIP
-if not defined CATIP set "CATIP=135.233.95.130"
+if not defined CATIP set "CATIP=20.165.94.49"
 call :LOG "Catalog IP: !CATIP!"
 >"%WORK%\updateids.txt" echo [{"size":0,"updateID":"%UPDATEID%","uidInfo":"%UPDATEID%"}]
 %CURL% --ssl-no-revoke --fail --silent --show-error --connect-timeout 20 --max-time 120 --resolve "www.catalog.update.microsoft.com:443:!CATIP!" -X POST -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "updateIDs@%WORK%\updateids.txt" "https://www.catalog.update.microsoft.com/DownloadDialog.aspx" -o "%WORK%\catalog.html" >>"%LOG%" 2>&1
@@ -98,26 +96,30 @@ if not defined CABURL (
 )
 call :LOG "Catalog driver URL: !CABURL!"
 
-for /f "tokens=3 delims=/" %%H in ("!CABURL!") do set "DLHOST=%%H"
+rem IMPORTANT: FOR /F collapses repeated '/' delimiters, so token 2 is the host.
+for /f "tokens=2 delims=/" %%H in ("!CABURL!") do set "DLHOST=%%H"
 if not defined DLHOST (
   set "FAILCODE=34"
   set "FAILMSG=Could not determine the Microsoft download host."
   goto :FAIL
 )
+call :LOG "Download host: !DLHOST!"
 
 if exist "%CAB%" del /f /q "%CAB%" >nul 2>&1
+if exist "%CAB%.tmp" del /f /q "%CAB%.tmp" >nul 2>&1
+
 call :RESOLVE !DLHOST! DLIP
 if defined DLIP (
-  call :LOG "Trying resolved download IP: !DLIP!"
+  call :LOG "Resolved download IP: !DLIP!"
   call :TRYDOWNLOAD !DLIP!
 )
 
-rem WinRE DNS is unreliable. If normal resolution fails, try known Microsoft CDN
-rem endpoints while preserving the real HTTPS hostname and certificate check.
-if not exist "%CAB%" if /i "!DLHOST!"=="catalog.s.download.windowsupdate.com" (
-  for %%I in (23.32.75.16 152.195.19.97 2.16.168.54 2.20.245.170 152.199.39.108 152.199.21.175) do (
+rem Safe fallback addresses for Microsoft's Windows Update CDN. The true
+rem hostname is preserved in TLS/SNI via --resolve.
+if not exist "%CAB%" (
+  for %%I in (152.195.19.97 23.32.75.16 152.199.39.108 152.199.21.175 2.16.168.54 2.20.245.170) do (
     if not exist "%CAB%" (
-      call :LOG "Trying Microsoft CDN IP %%I"
+      call :LOG "Trying CDN fallback IP %%I"
       call :TRYDOWNLOAD %%I
     )
   )
@@ -125,7 +127,7 @@ if not exist "%CAB%" if /i "!DLHOST!"=="catalog.s.download.windowsupdate.com" (
 
 if not exist "%CAB%" (
   set "FAILCODE=35"
-  set "FAILMSG=Driver CAB download failed after DNS and CDN fallback attempts."
+  set "FAILMSG=Driver CAB download failed after resolved and CDN fallback attempts."
   goto :FAIL
 )
 
@@ -176,9 +178,9 @@ set "TRYIP=%~1"
 if exist "%CAB%" exit /b 0
 echo(!CABURL!|%FINDSTR% /b /i "https://" >nul
 if not errorlevel 1 (
-  %CURL% --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 10 --max-time 600 --resolve "!DLHOST!:443:%TRYIP%" "!CABURL!" -o "%CAB%.tmp" >>"%LOG%" 2>&1
+  %CURL% --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 12 --max-time 600 --resolve "!DLHOST!:443:%TRYIP%" "!CABURL!" -o "%CAB%.tmp" >>"%LOG%" 2>&1
 ) else (
-  %CURL% --fail --location --silent --show-error --connect-timeout 10 --max-time 600 --resolve "!DLHOST!:80:%TRYIP%" "!CABURL!" -o "%CAB%.tmp" >>"%LOG%" 2>&1
+  %CURL% --fail --location --silent --show-error --connect-timeout 12 --max-time 600 --resolve "!DLHOST!:80:%TRYIP%" "!CABURL!" -o "%CAB%.tmp" >>"%LOG%" 2>&1
 )
 if errorlevel 1 (
   if exist "%CAB%.tmp" del /f /q "%CAB%.tmp" >nul 2>&1
