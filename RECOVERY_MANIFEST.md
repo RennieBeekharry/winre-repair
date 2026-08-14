@@ -1,6 +1,6 @@
 # Windows Recovery Manifest
 
-Last updated: 2026-08-14 09:05 ET
+Last updated: 2026-08-14 09:14 ET
 
 ## Current failure
 
@@ -32,7 +32,8 @@ Last updated: 2026-08-14 09:05 ET
 | PASS | Binding rollback | Controller restored to `iaStorA` | Current baseline |
 | PASS | USB identity verification | USB positively identified separately from Windows disk | Completed |
 | PASS | USB media layout/format | `WIN11MEDIA` FAT32 boot partition + `REPAIRDATA` NTFS data partition created successfully; Windows disk not targeted | COMPLETE; no further disk formatting/cleaning code allowed in active workflow |
-| FAIL | UUP website `get.php?...&aria2=2` manifest retrieval | Endpoint did not return the aria2 manifest format the script expected; no disk/filesystem operation occurred | Do not repeat; endpoint choice was wrong |
+| FAIL | UUP website `get.php?...&aria2=2` manifest retrieval | Interactive website endpoint did not return the assumed aria2 manifest | Do not repeat; wrong automation endpoint |
+| FAIL | GitHub-API helper acquisition in build 0907 | Recovery downloader helper could not be obtained in WinRE; no disk/filesystem operation occurred | Do not repeat unchanged; remove GitHub-API dependency for helper retrieval |
 
 ## Current recovery USB state
 
@@ -42,21 +43,23 @@ Last updated: 2026-08-14 09:05 ET
 
 ## Next planned actions
 
-1. Use the official UUP dump JSON API at `api.uupdump.net/get.php` for the selected Windows 11 24H2 x64 Home/Core en-US build.
-2. Validate API response build = 26100.8894 and architecture = amd64 before downloading any source file.
-3. Download UUP files only to `REPAIRDATA` and verify each file against the API-provided SHA-1.
-4. Make downloads resumable/restartable; already-verified files must be reused on later runs.
-5. Convert the verified UUP set into usable Windows setup/recovery source files using Windows-compatible conversion tooling.
-6. Copy only the required boot/setup files to `WIN11MEDIA`; keep oversized image payloads on `REPAIRDATA` if needed.
-7. Boot the fresh Microsoft-derived recovery environment and use it as a known-good repair source.
-8. From fresh recovery media, re-evaluate the storage stack and perform targeted repair only: DISM component repair/source validation, offline SFC, storage-driver comparison, and BCDBoot refresh if evidence supports it.
-9. Escalate to reset/reinstall only after targeted recovery-source repair is exhausted and only with explicit approval.
+1. Use the official UUP dump JSON API at `api.uupdump.net/get.php` for Windows 11 24H2 build 26100.8894, x64, Home/Core, en-US.
+2. Remove the separate GitHub-API helper dependency: reuse a validated local helper if present; otherwise fetch the static helper through the raw GitHub content endpoint with DNS/IP fallback and cache-busting.
+3. Validate API response build = 26100.8894 and architecture = amd64 before downloading any source file.
+4. Download UUP files only to `REPAIRDATA` and verify each file against the API-provided SHA-1.
+5. Make downloads resumable/restartable; already-verified files must be reused on later runs.
+6. Convert the verified UUP set into usable Windows setup/recovery source files using Windows-compatible conversion tooling.
+7. Copy only required boot/setup files to `WIN11MEDIA`; keep oversized image payloads on `REPAIRDATA` if needed.
+8. Boot the fresh Microsoft-derived recovery environment and use it as a known-good repair source.
+9. From fresh recovery media, re-evaluate the storage stack and perform targeted repair only: DISM component repair/source validation, offline SFC, storage-driver comparison, and BCDBoot refresh if evidence supports it.
+10. Escalate to reset/reinstall only after targeted recovery-source repair is exhausted and only with explicit approval.
 
 ## Explicit do-not-repeat / do-not-do list
 
 - Do not repeat the failed `iaStorA -> iaStorAC` binding test unchanged.
 - Do not repeat prior ReadyBoost/storage-service/filter experiments unchanged.
 - Do not use the UUP website aria2 endpoint as an automated manifest API.
+- Do not rely on the GitHub Contents API as the only way to obtain the UUP downloader helper from WinRE.
 - Do not run disk clean, format, repartition, or filesystem-creation commands in the active recovery workflow.
 - Do not erase or reinstall Windows as part of the current targeted recovery phase.
 - Do not use unsigned storage drivers or `/ForceUnsigned`.
