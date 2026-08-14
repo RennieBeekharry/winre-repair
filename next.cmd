@@ -8,7 +8,7 @@ rem WR_TARGET=Recovery tooling under C:\WinRERepair only; no Windows boot files 
 rem WR_CONSEQUENCE=Records Terms acceptance and establishes a repository-scoped outbound GitHub App credential.
 rem WR_ROLLBACK=Local RescueMeAI authorization files can be removed later; no Windows recovery changes are performed.
 
-set "COMMAND_VERSION=RMAI-2026.08.14-SECURE-PAIRING-6"
+set "COMMAND_VERSION=RMAI-2026.08.14-SECURE-PAIRING-7"
 set "PRODUCT=RescueMeAI"
 set "DESCRIPTION=AI-ASSISTED WINDOWS RECOVERY"
 set "TERMS_VERSION=2026-08-14"
@@ -31,6 +31,9 @@ set "PING=X:\Windows\System32\ping.exe"
 set "WPEUTIL=X:\Windows\System32\wpeutil.exe"
 set "MODE=C:\Windows\System32\mode.com"
 if not exist "%MODE%" set "MODE=mode"
+set "UI_CMD=%ComSpec%"
+if not defined UI_CMD set "UI_CMD=X:\Windows\System32\cmd.exe"
+if not exist "%UI_CMD%" set "UI_CMD=C:\Windows\System32\cmd.exe"
 set "APIHOST=api.github.com"
 set "WEBHOST=github.com"
 set "LOGREPO=RennieBeekharry/winre-repair-logs"
@@ -38,7 +41,7 @@ set "GITHUB_APP_ID=4595411"
 set "GITHUB_APP_CLIENT_ID=Iv23lif9UoXW4QvUh8tJ"
 set "GITHUB_REPOSITORY_ID=1333818657"
 
-rem UI geometry. Callers use semantic types; :UI_PAINT is the only function
+rem UI geometry. Callers use semantic types; :UI_LINE is the only function
 rem that maps semantic meaning to console color attributes.
 set "UI_WIDTH=96"
 set "UI_TEXT_WIDTH=92"
@@ -86,6 +89,8 @@ if errorlevel 1 goto :FAIL
 call :REQUIRE "%CERTUTIL%" "certutil.exe"
 if errorlevel 1 goto :FAIL
 call :REQUIRE "%PING%" "ping.exe"
+if errorlevel 1 goto :FAIL
+call :REQUIRE "%UI_CMD%" "cmd.exe"
 if errorlevel 1 goto :FAIL
 
 rem Direct-IP ping is secondary evidence only. The successful launcher HTTPS
@@ -136,7 +141,6 @@ call :UI_WRAP WARNING "Typing ACCEPT agrees to the general RescueMeAI legal term
 call :UI_SECTION INSTRUCTION "ACTION REQUIRED"
 call :UI_WRAP INSTRUCTION "Type exactly ACCEPT to agree and continue. Anything else stops RescueMeAI safely without starting recovery."
 echo.
-call :UI_LINE PROMPT "ACCEPT TERMS OF USE"
 set "TERMS_TYPED="
 set /p "TERMS_TYPED=ACCEPT TERMS OF USE: "
 if not "!TERMS_TYPED!"=="ACCEPT" (
@@ -379,6 +383,8 @@ exit /b 0
 
 :UI_LINE
 rem This is the only semantic-to-color mapping in the bootstrap.
+rem Pairing-6 proved FINDSTR /A rendered monochrome in this WinRE console,
+rem so Pairing-7 emits each semantic line through child CMD /T:<color>.
 set "UI_SEM=%~1"
 set "UI_TEXT=%~2"
 set "UI_ATTR=07"
@@ -396,8 +402,8 @@ if /i "!UI_SEM!"=="LABEL" set "UI_ATTR=07"
 call :STRLEN "!UI_TEXT!" UI_PRINT_LEN
 if !UI_PRINT_LEN! GTR %UI_WIDTH% set "UI_TEXT=!UI_TEXT:~0,%UI_WIDTH%!"
 >"%UI_TMP%" echo(!UI_TEXT!
-"%FINDSTR%" /a:!UI_ATTR! /r "^" "%UI_TMP%" 2>nul
-if errorlevel 1 echo(!UI_TEXT!
+"%UI_CMD%" /d /q /t:!UI_ATTR! /c type "%UI_TMP%" 2>nul
+if errorlevel 1 type "%UI_TMP%"
 del /f /q "%UI_TMP%" >nul 2>&1
 exit /b 0
 
