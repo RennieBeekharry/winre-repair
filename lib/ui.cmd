@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-rem WR-MODULE: ui 2026.08.14-1818-ET
+rem WR-MODULE: ui 2026.08.14-1825-ET
 rem RescueMeAI WinRE console renderer v3.
 rem Centralize operator-readable status, roadmap, readiness and progress output.
 
@@ -11,6 +11,8 @@ set "RMAI_UI_BORDER=============================================================
 set "RMAI_UI_RULE=------------------------------------------------------------------------------------------------"
 set "RMAI_UI_MODE=C:\Windows\System32\mode.com"
 if not exist "%RMAI_UI_MODE%" set "RMAI_UI_MODE=mode"
+set "RMAI_UI_FINDSTR=C:\Windows\System32\findstr.exe"
+if not exist "%RMAI_UI_FINDSTR%" set "RMAI_UI_FINDSTR=findstr"
 
 if /i "%~1"=="setup" goto :SETUP
 if /i "%~1"=="screen" goto :SCREEN
@@ -79,7 +81,9 @@ exit /b 0
 :MAKE_BAR
 rem MAKE_BAR integer-percent 0..100; returns RMAI_BAR within this process.
 set "RMAI_BAR_PERCENT=%~1"
-set /a RMAI_BAR_PERCENT+=0 2>nul
+>nul 2>&1 echo(%RMAI_BAR_PERCENT%|"%RMAI_UI_FINDSTR%" /r /x "[0-9][0-9]*"
+if errorlevel 1 set "RMAI_BAR_PERCENT=0"
+set /a RMAI_BAR_PERCENT+=0
 if %RMAI_BAR_PERCENT% LSS 0 set "RMAI_BAR_PERCENT=0"
 if %RMAI_BAR_PERCENT% GTR 100 set "RMAI_BAR_PERCENT=100"
 set /a RMAI_BAR_FILLED=RMAI_BAR_PERCENT/5
@@ -94,11 +98,17 @@ rem roadmap CURRENT_STAGE [ESTIMATED_PERCENT]
 set "RM_STAGE=%~2"
 set "RM_PERCENT=%~3"
 if not defined RM_STAGE set "RM_STAGE=1"
-set /a RM_STAGE+=0 2>nul
+>nul 2>&1 echo(%RM_STAGE%|"%RMAI_UI_FINDSTR%" /r /x "[0-9][0-9]*"
+if errorlevel 1 set "RM_STAGE=1"
+set /a RM_STAGE+=0
 if %RM_STAGE% LSS 1 set "RM_STAGE=1"
 if %RM_STAGE% GTR 10 set "RM_STAGE=10"
 if not defined RM_PERCENT set /a RM_PERCENT=RM_STAGE*10
-set /a RM_PERCENT+=0 2>nul
+>nul 2>&1 echo(%RM_PERCENT%|"%RMAI_UI_FINDSTR%" /r /x "[0-9][0-9]*"
+if errorlevel 1 set /a RM_PERCENT=RM_STAGE*10
+set /a RM_PERCENT+=0
+if %RM_PERCENT% LSS 0 set "RM_PERCENT=0"
+if %RM_PERCENT% GTR 100 set "RM_PERCENT=100"
 call :MAKE_BAR "%RM_PERCENT%"
 set "RM_NEXT=%RM_STAGE%"
 set /a RM_NEXT+=1
@@ -146,6 +156,7 @@ exit /b 0
 
 :PROGRESS
 rem progress TASK PERCENT UNITS DATA SPEED ELAPSED ETA
+rem PERCENT is integer 0..100 when measurable; otherwise pass text such as UNKNOWN.
 set "PG_TASK=%~2"
 set "PG_PERCENT=%~3"
 set "PG_UNITS=%~4"
@@ -154,14 +165,16 @@ set "PG_SPEED=%~6"
 set "PG_ELAPSED=%~7"
 set "PG_ETA=%~8"
 if not defined PG_TASK set "PG_TASK=Recovery operation"
-if not defined PG_PERCENT set "PG_PERCENT=-1"
+if not defined PG_PERCENT set "PG_PERCENT=UNKNOWN"
 if not defined PG_ELAPSED set "PG_ELAPSED=Not available"
 if not defined PG_ETA set "PG_ETA=Not available yet - result dependent"
 echo.
 echo CURRENT TASK
 echo %RMAI_UI_RULE%
 echo %PG_TASK%
-set /a PG_NUM=%PG_PERCENT%+0 2>nul
+set "PG_NUM=-1"
+>nul 2>&1 echo(%PG_PERCENT%|"%RMAI_UI_FINDSTR%" /r /x "[0-9][0-9]*"
+if not errorlevel 1 set /a PG_NUM=PG_PERCENT+0
 if %PG_NUM% GEQ 0 if %PG_NUM% LEQ 100 (
   call :MAKE_BAR "%PG_NUM%"
   echo Progress : [%RMAI_BAR%] %PG_NUM% percent
