@@ -2,13 +2,13 @@
 setlocal EnableExtensions EnableDelayedExpansion
 rem WR_RISK=REPAIR_WRITE
 rem WR_LOCAL_AUTH=NOT_REQUIRED
-rem WR_SUMMARY=Resume RescueMeAI with legacy-compatible JSON parsing, secure HTTPS transport, self-healing GitHub App authorization, and clean per-launch diagnostics.
-rem WR_ACTION=START_RESCUEMEAI_SECURE_AUTONOMOUS_V15
-rem WR_TARGET=RescueMeAI runtime and private command channel only.
-rem WR_CONSEQUENCE=Updates RescueMeAI runtime modules and reconnects secure command transport. It does not modify Windows recovery state.
+rem WR_SUMMARY=Resume RescueMeAI using the already-staged runtime and GitHub form-encoded device authorization.
+rem WR_ACTION=START_RESCUEMEAI_MINIMAL_FORM_AUTH_V16
+rem WR_TARGET=RescueMeAI runtime/authentication only.
+rem WR_CONSEQUENCE=Updates the local authorization module and reconnects the private command channel. It does not modify Windows recovery state.
 rem WR_ROLLBACK=Runtime-only startup update; no Windows recovery rollback is required.
 
-set "COMMAND_VERSION=RMAI-2026.08.15-AGENT-START-15"
+set "COMMAND_VERSION=RMAI-2026.08.15-AGENT-START-16"
 set "WORK=C:\WinRERepair"
 set "RUNTIME=%WORK%\runtime"
 set "CONFIG=%WORK%\agent.cfg"
@@ -16,7 +16,7 @@ set "AGENT=C:\wr-agent-v2.cmd"
 set "CURL=C:\Windows\System32\curl.exe"
 set "FINDSTR=C:\Windows\System32\findstr.exe"
 set "SOURCE_REPO=RennieBeekharry/winre-repair"
-set "SOURCE_REF=41b232f3abc3a123fe61627040bf936aa658b516"
+set "SOURCE_REF=3e4cb97607632259457839e63aea72400a0567fc"
 set "LOG_REPO=RennieBeekharry/winre-repair-logs"
 set "LOG_REPO_ID=1333818657"
 set "APP_ID=4595411"
@@ -24,58 +24,71 @@ set "CLIENT_ID=Iv23lif9UoXW4QvUh8tJ"
 set "APIIP="
 set "BOOT_TLS="
 set "FAIL_REASON=RescueMeAI could not resume the secure recovery session."
+set "FAILED_MODULE="
 
 title RescueMeAI - Windows Recovery
 if not exist "%WORK%" md "%WORK%" >nul 2>&1
 if not exist "%RUNTIME%" md "%RUNTIME%" >nul 2>&1
-rem Never display a previous session's GitHub error as the current failure.
 if exist "%WORK%\GITHUB_RESULT.txt" del /f /q "%WORK%\GITHUB_RESULT.txt" >nul 2>&1
-if not exist "%CURL%" goto :FATAL
-if not exist "%FINDSTR%" goto :FATAL
-if not exist "%AGENT%" goto :FATAL
+if not exist "%CURL%" (
+  set "FAIL_REASON=Required curl.exe is missing."
+  goto :FATAL
+)
+if not exist "%FINDSTR%" (
+  set "FAIL_REASON=Required findstr.exe is missing."
+  goto :FATAL
+)
+if not exist "%AGENT%" (
+  set "FAIL_REASON=The persistent RescueMeAI agent is missing."
+  goto :FATAL
+)
 
 "%CURL%" --help all 2>nul | "%FINDSTR%" /c:"--ssl-revoke-best-effort" >nul 2>&1
 if not errorlevel 1 set "BOOT_TLS=--ssl-revoke-best-effort"
 
-call :SCREEN "SECURE STARTUP" "Staging hardened runtime and legacy-compatible authorization modules."
+call :SCREEN "SECURE STARTUP" "Reusing the validated local runtime and updating only authorization."
 
-rem Bootstrap using the last validated resolver/cache. HTTPS certificate validation remains enabled.
+rem START-14 already staged the runtime successfully. Reuse it rather than
+rem downloading every module again. Resolve only the API route needed for the
+rem single authorization-module fetch.
+if exist "%WORK%\github-api-ip.txt" set /p "APIIP="<"%WORK%\github-api-ip.txt"
 if exist "%RUNTIME%\resolve.cmd" call "%RUNTIME%\resolve.cmd" resolve api.github.com APIIP
-if not defined APIIP if exist "%WORK%\github-api-ip.txt" set /p "APIIP="<"%WORK%\github-api-ip.txt"
 if not defined APIIP (
   set "FAIL_REASON=No validated api.github.com route is available."
   goto :FATAL
 )
 
-call :FETCH_MODULE "lib/resolve.cmd" "%RUNTIME%\resolve.cmd"
-if errorlevel 1 goto :STAGE_FAIL
-call :FETCH_MODULE "lib/network.cmd" "%RUNTIME%\network.cmd"
-if errorlevel 1 goto :STAGE_FAIL
-call :FETCH_MODULE "lib/github-auth-v3.cmd" "%RUNTIME%\github-auth.cmd"
-if errorlevel 1 goto :STAGE_FAIL
-call :FETCH_MODULE "lib/json-value-v1.js" "%RUNTIME%\json-value-v1.js"
-if errorlevel 1 goto :STAGE_FAIL
-for %%F in (ui.cmd reporting.cmd safety.cmd agent-core.js) do (
-  call :FETCH_MODULE "lib/%%F" "%RUNTIME%\%%F"
-  if errorlevel 1 goto :STAGE_FAIL
+rem Fetch exactly one changed module.
+set "FAILED_MODULE=github-auth-v4.cmd"
+call :FETCH_MODULE "lib/github-auth-v4.cmd" "%RUNTIME%\github-auth.cmd"
+if errorlevel 1 (
+  set "FAIL_REASON=Could not stage the START-16 authorization module over validated HTTPS."
+  goto :FATAL
+)
+"%FINDSTR%" /i /c:"WR-MODULE: github-auth-v4 2026.08.15-FORM-OAUTH-TLS" "%RUNTIME%\github-auth.cmd" >nul 2>&1
+if errorlevel 1 (
+  set "FAIL_REASON=The START-16 authorization module failed marker validation."
+  goto :FATAL
 )
 
-"%FINDSTR%" /i /c:"WR-MODULE: github-auth-v3 2026.08.15-CSCRIPT-JSON-TLS" "%RUNTIME%\github-auth.cmd" >nul 2>&1
-if errorlevel 1 (
-  set "FAIL_REASON=Robust authorization module failed marker validation."
-  goto :FATAL
-)
-"%FINDSTR%" /i /c:"avoids JSON.parse" "%RUNTIME%\json-value-v1.js" >nul 2>&1
-if errorlevel 1 (
-  set "FAIL_REASON=Legacy-compatible JSON helper failed marker validation."
-  goto :FATAL
+rem Core modules should already be present from START-14. Fetch only a module
+rem that is genuinely missing, and identify it explicitly if that recovery fails.
+for %%F in (resolve.cmd network.cmd ui.cmd reporting.cmd safety.cmd agent-core.js) do (
+  if not exist "%RUNTIME%\%%F" (
+    set "FAILED_MODULE=%%F"
+    call :FETCH_MODULE "lib/%%F" "%RUNTIME%\%%F"
+    if errorlevel 1 (
+      set "FAIL_REASON=Could not recover missing runtime module %%F over validated HTTPS."
+      goto :FATAL
+    )
+  )
 )
 
 >"%RUNTIME%\runtime-sync.cmd" echo @echo off
 >>"%RUNTIME%\runtime-sync.cmd" echo setlocal EnableExtensions
->>"%RUNTIME%\runtime-sync.cmd" echo rem WR-MODULE: runtime-local-ready 2026.08.15-START-15
+>>"%RUNTIME%\runtime-sync.cmd" echo rem WR-MODULE: runtime-local-ready 2026.08.15-START-16
 >>"%RUNTIME%\runtime-sync.cmd" echo set "RUNTIME=C:\WinRERepair\runtime"
->>"%RUNTIME%\runtime-sync.cmd" echo for %%%%F in ^(ui.cmd network.cmd resolve.cmd reporting.cmd github-auth.cmd safety.cmd agent-core.js json-value-v1.js^) do if not exist "%%RUNTIME%%\%%%%F" exit /b 91
+>>"%RUNTIME%\runtime-sync.cmd" echo for %%%%F in ^(ui.cmd network.cmd resolve.cmd reporting.cmd github-auth.cmd safety.cmd agent-core.js^) do if not exist "%%RUNTIME%%\%%%%F" exit /b 91
 >>"%RUNTIME%\runtime-sync.cmd" echo exit /b 0
 
 >"%CONFIG%" echo PRODUCT=RescueMeAI
@@ -89,7 +102,7 @@ if errorlevel 1 (
 >>"%CONFIG%" echo SOURCE_REPO=%SOURCE_REPO%
 >>"%CONFIG%" echo SOURCE_REF=%SOURCE_REF%
 
-call :SCREEN "SECURE AUTHORIZATION" "Validating the saved GitHub authorization or renewing it if necessary."
+call :SCREEN "SECURE AUTHORIZATION" "Validating the saved GitHub authorization or renewing it with GitHub device flow."
 call "%RUNTIME%\github-auth.cmd" authorize
 if errorlevel 1 (
   set "FAIL_REASON=Secure GitHub authorization could not be established."
@@ -101,10 +114,6 @@ call "%AGENT%"
 set "ARC=!errorlevel!"
 if "!ARC!"=="0" exit /b 0
 set "FAIL_REASON=The persistent RescueMeAI agent stopped unexpectedly with return code !ARC!."
-goto :FATAL
-
-:STAGE_FAIL
-set "FAIL_REASON=Could not stage one of the START-15 runtime modules over validated HTTPS."
 goto :FATAL
 
 :FETCH_MODULE
@@ -149,6 +158,7 @@ echo Windows changes : STOPPED
 echo ====================================================================================================
 echo.
 echo %FAIL_REASON%
+if defined FAILED_MODULE echo Module          : %FAILED_MODULE%
 echo.
 if exist "%WORK%\GITHUB_RESULT.txt" (
   echo LOCAL GITHUB DETAIL
