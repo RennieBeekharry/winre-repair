@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-rem WR-MODULE: resolve 2026.08.14-1552-ET
+rem WR-MODULE: resolve 2026.08.15-SECURE-TLS-1
 if /i "%~1"=="resolve" goto :RESOLVE
 exit /b 64
 
@@ -34,7 +34,7 @@ if defined CACHE if exist "%CACHE%" (
   )
 )
 
-rem Proven WinRE fallback: resolve through DNS-over-HTTPS without depending on local DNS.
+rem Resolve through DNS-over-HTTPS without depending on local DNS.
 for %%I in (1.1.1.1 1.0.0.1) do (
   call :DOH "%%I"
   if defined CAND (
@@ -62,7 +62,7 @@ set "DOHHTTP=%WORK%\resolve-doh-http.txt"
 set "CAND="
 if exist "%DOHJSON%" del /f /q "%DOHJSON%" >nul 2>&1
 if exist "%DOHHTTP%" del /f /q "%DOHHTTP%" >nul 2>&1
-"%CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 10 --max-time 45 --resolve "%DOHHOST%:443:%DOHIP%" -H "Accept: application/dns-json" "https://%DOHHOST%/dns-query?name=%HOST%&type=A" -o "%DOHJSON%" -w "%%{http_code}" >"%DOHHTTP%" 2>nul
+"%CURL%" --ssl-revoke-best-effort --silent --show-error --connect-timeout 10 --max-time 45 --resolve "%DOHHOST%:443:%DOHIP%" -H "Accept: application/dns-json" "https://%DOHHOST%/dns-query?name=%HOST%&type=A" -o "%DOHJSON%" -w "%%{http_code}" >"%DOHHTTP%" 2>nul
 if errorlevel 1 exit /b 0
 set "HC="
 if exist "%DOHHTTP%" set /p "HC="<"%DOHHTTP%"
@@ -95,8 +95,9 @@ exit /b 0
 
 :VALIDATE
 if not defined CAND exit /b 1
-rem Any HTTP response proves DNS/TLS reachability; do not reject a host merely because its root URL returns 4xx.
-"%CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 8 --max-time 20 --resolve "%HOST%:443:%CAND%" "https://%HOST%/" -o NUL >nul 2>&1
+rem HTTPS is mandatory. --resolve pins the selected IP while TLS still validates the requested hostname.
+rem Revocation checks remain enabled when available; offline CRL endpoints are tolerated in WinRE.
+"%CURL%" --ssl-revoke-best-effort --silent --show-error --connect-timeout 8 --max-time 20 --resolve "%HOST%:443:%CAND%" "https://%HOST%/" -o NUL >nul 2>&1
 exit /b %errorlevel%
 
 :SUCCESS
