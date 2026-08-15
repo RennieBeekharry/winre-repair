@@ -2,13 +2,13 @@
 setlocal EnableExtensions EnableDelayedExpansion
 rem WR_RISK=REPAIR_WRITE
 rem WR_LOCAL_AUTH=NOT_REQUIRED
-rem WR_SUMMARY=Resume RescueMeAI with robust local JSON parsing, secure HTTPS transport, self-healing GitHub App authorization, and clean per-launch diagnostics.
-rem WR_ACTION=START_RESCUEMEAI_SECURE_AUTONOMOUS_V14
+rem WR_SUMMARY=Resume RescueMeAI with legacy-compatible JSON parsing, secure HTTPS transport, self-healing GitHub App authorization, and clean per-launch diagnostics.
+rem WR_ACTION=START_RESCUEMEAI_SECURE_AUTONOMOUS_V15
 rem WR_TARGET=RescueMeAI runtime and private command channel only.
 rem WR_CONSEQUENCE=Updates RescueMeAI runtime modules and reconnects secure command transport. It does not modify Windows recovery state.
 rem WR_ROLLBACK=Runtime-only startup update; no Windows recovery rollback is required.
 
-set "COMMAND_VERSION=RMAI-2026.08.15-AGENT-START-14"
+set "COMMAND_VERSION=RMAI-2026.08.15-AGENT-START-15"
 set "WORK=C:\WinRERepair"
 set "RUNTIME=%WORK%\runtime"
 set "CONFIG=%WORK%\agent.cfg"
@@ -16,7 +16,7 @@ set "AGENT=C:\wr-agent-v2.cmd"
 set "CURL=C:\Windows\System32\curl.exe"
 set "FINDSTR=C:\Windows\System32\findstr.exe"
 set "SOURCE_REPO=RennieBeekharry/winre-repair"
-set "SOURCE_REF=d5d3e09e2fa44d39f73121937df80267c4cda1bf"
+set "SOURCE_REF=41b232f3abc3a123fe61627040bf936aa658b516"
 set "LOG_REPO=RennieBeekharry/winre-repair-logs"
 set "LOG_REPO_ID=1333818657"
 set "APP_ID=4595411"
@@ -37,7 +37,7 @@ if not exist "%AGENT%" goto :FATAL
 "%CURL%" --help all 2>nul | "%FINDSTR%" /c:"--ssl-revoke-best-effort" >nul 2>&1
 if not errorlevel 1 set "BOOT_TLS=--ssl-revoke-best-effort"
 
-call :SCREEN "SECURE STARTUP" "Staging hardened runtime and robust authorization modules."
+call :SCREEN "SECURE STARTUP" "Staging hardened runtime and legacy-compatible authorization modules."
 
 rem Bootstrap using the last validated resolver/cache. HTTPS certificate validation remains enabled.
 if exist "%RUNTIME%\resolve.cmd" call "%RUNTIME%\resolve.cmd" resolve api.github.com APIIP
@@ -65,10 +65,15 @@ if errorlevel 1 (
   set "FAIL_REASON=Robust authorization module failed marker validation."
   goto :FATAL
 )
+"%FINDSTR%" /i /c:"avoids JSON.parse" "%RUNTIME%\json-value-v1.js" >nul 2>&1
+if errorlevel 1 (
+  set "FAIL_REASON=Legacy-compatible JSON helper failed marker validation."
+  goto :FATAL
+)
 
 >"%RUNTIME%\runtime-sync.cmd" echo @echo off
 >>"%RUNTIME%\runtime-sync.cmd" echo setlocal EnableExtensions
->>"%RUNTIME%\runtime-sync.cmd" echo rem WR-MODULE: runtime-local-ready 2026.08.15-START-14
+>>"%RUNTIME%\runtime-sync.cmd" echo rem WR-MODULE: runtime-local-ready 2026.08.15-START-15
 >>"%RUNTIME%\runtime-sync.cmd" echo set "RUNTIME=C:\WinRERepair\runtime"
 >>"%RUNTIME%\runtime-sync.cmd" echo for %%%%F in ^(ui.cmd network.cmd resolve.cmd reporting.cmd github-auth.cmd safety.cmd agent-core.js json-value-v1.js^) do if not exist "%%RUNTIME%%\%%%%F" exit /b 91
 >>"%RUNTIME%\runtime-sync.cmd" echo exit /b 0
@@ -99,7 +104,7 @@ set "FAIL_REASON=The persistent RescueMeAI agent stopped unexpectedly with retur
 goto :FATAL
 
 :STAGE_FAIL
-set "FAIL_REASON=Could not stage one of the START-14 runtime modules over validated HTTPS."
+set "FAIL_REASON=Could not stage one of the START-15 runtime modules over validated HTTPS."
 goto :FATAL
 
 :FETCH_MODULE
