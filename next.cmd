@@ -2,19 +2,18 @@
 setlocal EnableExtensions EnableDelayedExpansion
 rem WR_RISK=REPAIR_WRITE
 rem WR_LOCAL_AUTH=NOT_REQUIRED
-rem WR_SUMMARY=Resume RescueMeAI with self-contained JSON OAuth parsing over cached validated GitHub routes.
-rem WR_ACTION=START_RESCUEMEAI_SELF_CONTAINED_JSON_AUTH_V21
+rem WR_SUMMARY=Resume RescueMeAI with a directly-invoked local JSON parser over cached validated GitHub routes.
+rem WR_ACTION=START_RESCUEMEAI_DIRECT_JSON_AUTH_V22
 rem WR_TARGET=RescueMeAI authentication and persistent command channel only.
 rem WR_CONSEQUENCE=Validates or renews the GitHub App token and starts the existing agent. It does not modify Windows recovery state.
 rem WR_ROLLBACK=Runtime-only startup operation; no Windows recovery rollback is required.
 
-set "COMMAND_VERSION=RMAI-2026.08.15-AGENT-START-21"
+set "COMMAND_VERSION=RMAI-2026.08.15-AGENT-START-22"
 set "WORK=C:\WinRERepair"
 set "RUNTIME=%WORK%\runtime"
 set "CONFIG=%WORK%\agent.cfg"
 set "AUTHDIR=%WORK%\.auth"
 set "TOKEN=%AUTHDIR%\github-logs.token"
-set "REFRESH=%AUTHDIR%\github-refresh.token"
 set "META=%AUTHDIR%\github-token.meta"
 set "AGENT=C:\wr-agent-v2.cmd"
 set "CURL=C:\Windows\System32\curl.exe"
@@ -22,8 +21,9 @@ set "FINDSTR=C:\Windows\System32\findstr.exe"
 set "CERTUTIL=C:\Windows\System32\certutil.exe"
 set "CSCRIPT=X:\Windows\System32\cscript.exe"
 if not exist "%CSCRIPT%" set "CSCRIPT=C:\Windows\System32\cscript.exe"
-set "JSONHELPER=%WORK%\start21-json-value.js"
-set "JSONB64=%WORK%\start21-json-value.b64"
+set "JSONHELPER=%WORK%\start22-json-value.js"
+set "JSONB64=%WORK%\start22-json-value.b64"
+set "JOUT=%WORK%\start22-jget.txt"
 set "CLIENT_ID=Iv23lif9UoXW4QvUh8tJ"
 set "APP_ID=4595411"
 set "LOG_REPO=RennieBeekharry/winre-repair-logs"
@@ -35,6 +35,9 @@ set "WEBIP="
 set "TLS="
 set "LAST_HTTP="
 set "LAST_CURL="
+set "PARSER_RC="
+set "BODY_HAS_DEVICE=UNKNOWN"
+set "CONTENT_TYPE=UNKNOWN"
 set "FAIL_REASON=RescueMeAI could not resume the secure recovery session."
 
 title RescueMeAI - Windows Recovery
@@ -89,21 +92,15 @@ if errorlevel 1 (
 
 >"%RUNTIME%\runtime-sync.cmd" echo @echo off
 >>"%RUNTIME%\runtime-sync.cmd" echo setlocal EnableExtensions
->>"%RUNTIME%\runtime-sync.cmd" echo rem WR-MODULE: runtime-local-ready 2026.08.15-START-21
+>>"%RUNTIME%\runtime-sync.cmd" echo rem WR-MODULE: runtime-local-ready 2026.08.15-START-22
 >>"%RUNTIME%\runtime-sync.cmd" echo set "RUNTIME=C:\WinRERepair\runtime"
 >>"%RUNTIME%\runtime-sync.cmd" echo for %%%%F in ^(ui.cmd network.cmd resolve.cmd reporting.cmd github-auth.cmd safety.cmd agent-core.js^) do if not exist "%%RUNTIME%%\%%%%F" exit /b 91
 >>"%RUNTIME%\runtime-sync.cmd" echo exit /b 0
 
-call :SCREEN "SECURE AUTHORIZATION" "Using cached validated GitHub routes and explicit JSON responses. No DNS lookup or secondary download is required."
+call :SCREEN "SECURE AUTHORIZATION" "Using cached validated GitHub routes and direct local response parsing. No DNS lookup or secondary download is required."
 
 call :TEST_TOKEN
 if not errorlevel 1 goto :AUTH_READY
-
-call :TRY_REFRESH
-if not errorlevel 1 (
-  call :TEST_TOKEN
-  if not errorlevel 1 goto :AUTH_READY
-)
 
 call :DEVICE_FLOW
 if errorlevel 1 goto :FATAL
@@ -126,9 +123,9 @@ if not exist "%TOKEN%" exit /b 1
 set "ACCESS="
 set /p "ACCESS="<"%TOKEN%"
 if not defined ACCESS exit /b 1
-set "OUT=%WORK%\start21-token-test.json"
-set "HTTP=%WORK%\start21-token-test-http.txt"
-"%CURL%" %TLS% --silent --show-error --connect-timeout 15 --max-time 60 --resolve "api.github.com:443:%APIIP%" -H "Accept: application/vnd.github+json" -H "Authorization: Bearer !ACCESS!" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repositories/%LOG_REPO_ID%" -o "%OUT%" -w "%%{http_code}" >"%HTTP%" 2>"%WORK%\start21-token-test-curl.txt"
+set "OUT=%WORK%\start22-token-test.json"
+set "HTTP=%WORK%\start22-token-test-http.txt"
+"%CURL%" %TLS% --silent --show-error --connect-timeout 15 --max-time 60 --resolve "api.github.com:443:%APIIP%" -H "Accept: application/vnd.github+json" -H "Authorization: Bearer !ACCESS!" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repositories/%LOG_REPO_ID%" -o "%OUT%" -w "%%{http_code}" >"%HTTP%" 2>"%WORK%\start22-token-test-curl.txt"
 set "LAST_CURL=!errorlevel!"
 set "LAST_HTTP="
 if exist "%HTTP%" set /p "LAST_HTTP="<"%HTTP%"
@@ -137,35 +134,21 @@ if not "!LAST_CURL!"=="0" exit /b 1
 if not "!LAST_HTTP!"=="200" exit /b 1
 exit /b 0
 
-:TRY_REFRESH
-if not exist "%REFRESH%" exit /b 1
-set "SAVED_REFRESH="
-set /p "SAVED_REFRESH="<"%REFRESH%"
-if not defined SAVED_REFRESH exit /b 1
-set "OUT=%WORK%\start21-refresh.json"
-set "HTTP=%WORK%\start21-refresh-http.txt"
-"%CURL%" %TLS% --silent --show-error --connect-timeout 15 --max-time 120 --resolve "github.com:443:%WEBIP%" -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "client_id=%CLIENT_ID%" --data-urlencode "grant_type=refresh_token" --data-urlencode "refresh_token=!SAVED_REFRESH!" "https://github.com/login/oauth/access_token" -o "%OUT%" -w "%%{http_code}" >"%HTTP%" 2>"%WORK%\start21-refresh-curl.txt"
-set "LAST_CURL=!errorlevel!"
-set "SAVED_REFRESH="
-set "LAST_HTTP="
-if exist "%HTTP%" set /p "LAST_HTTP="<"%HTTP%"
-if not "!LAST_CURL!"=="0" exit /b 1
-if not "!LAST_HTTP!"=="200" exit /b 1
-call :JGET "%OUT%" access_token NEW_ACCESS
-if not defined NEW_ACCESS exit /b 1
-call :JGET "%OUT%" refresh_token NEW_REFRESH
-call :STORE_TOKEN "!NEW_ACCESS!" "!NEW_REFRESH!" REFRESH
-set "NEW_ACCESS="
-set "NEW_REFRESH="
-exit /b 0
-
 :DEVICE_FLOW
-set "OUT=%WORK%\start21-device.json"
-set "HTTP=%WORK%\start21-device-http.txt"
-"%CURL%" %TLS% --silent --show-error --connect-timeout 15 --max-time 120 --resolve "github.com:443:%WEBIP%" -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "client_id=%CLIENT_ID%" "https://github.com/login/device/code" -o "%OUT%" -w "%%{http_code}" >"%HTTP%" 2>"%WORK%\start21-device-curl.txt"
+set "OUT=%WORK%\start22-device.json"
+set "HTTP=%WORK%\start22-device-http.txt"
+set "HEAD=%WORK%\start22-device-headers.txt"
+if exist "%OUT%" del /f /q "%OUT%" >nul 2>&1
+if exist "%HTTP%" del /f /q "%HTTP%" >nul 2>&1
+if exist "%HEAD%" del /f /q "%HEAD%" >nul 2>&1
+"%CURL%" %TLS% --silent --show-error --connect-timeout 15 --max-time 120 --resolve "github.com:443:%WEBIP%" -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "client_id=%CLIENT_ID%" -D "%HEAD%" "https://github.com/login/device/code" -o "%OUT%" -w "%%{http_code}" >"%HTTP%" 2>"%WORK%\start22-device-curl.txt"
 set "LAST_CURL=!errorlevel!"
 set "LAST_HTTP="
 if exist "%HTTP%" set /p "LAST_HTTP="<"%HTTP%"
+set "CONTENT_TYPE=UNKNOWN"
+for /f "tokens=1,* delims=:" %%A in ('"%FINDSTR%" /i /b /c:"Content-Type:" "%HEAD%" 2^>nul') do set "CONTENT_TYPE=%%B"
+"%FINDSTR%" /i /c:"device_code" "%OUT%" >nul 2>&1
+if errorlevel 1 (set "BODY_HAS_DEVICE=NO") else set "BODY_HAS_DEVICE=YES"
 if not "!LAST_CURL!"=="0" (
   set "FAIL_REASON=GitHub device authorization request failed over the cached HTTPS route."
   exit /b 1
@@ -179,11 +162,11 @@ call :JGET "%OUT%" user_code USER_CODE
 call :JGET "%OUT%" expires_in EXPIRES
 call :JGET "%OUT%" interval INTERVAL
 if not defined DEVICE_CODE (
-  set "FAIL_REASON=GitHub returned HTTP 200 but the JSON device_code could not be extracted."
+  set "FAIL_REASON=GitHub returned HTTP 200 but device_code could not be extracted by the direct parser."
   exit /b 1
 )
 if not defined USER_CODE (
-  set "FAIL_REASON=GitHub returned a device code but the JSON user_code could not be extracted."
+  set "FAIL_REASON=GitHub returned a device code but user_code could not be extracted."
   exit /b 1
 )
 if not defined EXPIRES set "EXPIRES=900"
@@ -223,9 +206,9 @@ if !COUNT! GTR !MAX! (
   exit /b 1
 )
 timeout /t !INTERVAL! /nobreak >nul
-set "TOK=%WORK%\start21-device-token.json"
-set "TOKHTTP=%WORK%\start21-device-token-http.txt"
-"%CURL%" %TLS% --silent --show-error --connect-timeout 15 --max-time 120 --resolve "github.com:443:%WEBIP%" -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "client_id=%CLIENT_ID%" --data-urlencode "device_code=!DEVICE_CODE!" --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:device_code" --data-urlencode "repository_id=%LOG_REPO_ID%" "https://github.com/login/oauth/access_token" -o "%TOK%" -w "%%{http_code}" >"%TOKHTTP%" 2>"%WORK%\start21-device-token-curl.txt"
+set "TOK=%WORK%\start22-device-token.json"
+set "TOKHTTP=%WORK%\start22-device-token-http.txt"
+"%CURL%" %TLS% --silent --show-error --connect-timeout 15 --max-time 120 --resolve "github.com:443:%WEBIP%" -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "client_id=%CLIENT_ID%" --data-urlencode "device_code=!DEVICE_CODE!" --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:device_code" --data-urlencode "repository_id=%LOG_REPO_ID%" "https://github.com/login/oauth/access_token" -o "%TOK%" -w "%%{http_code}" >"%TOKHTTP%" 2>"%WORK%\start22-device-token-curl.txt"
 set "LAST_CURL=!errorlevel!"
 set "LAST_HTTP="
 if exist "%TOKHTTP%" set /p "LAST_HTTP="<"%TOKHTTP%"
@@ -261,7 +244,16 @@ goto :DEVICE_POLL
 
 :JGET
 set "%~3="
-for /f "delims=" %%V in ('"%CSCRIPT%" //nologo "%JSONHELPER%" "%~1" "%~2" 2^>nul') do set "%~3=%%V"
+set "PARSER_RC="
+if exist "%JOUT%" del /f /q "%JOUT%" >nul 2>&1
+"%CSCRIPT%" //nologo "%JSONHELPER%" "%~1" "%~2" >"%JOUT%" 2>"%WORK%\start22-jget-error.txt"
+set "PARSER_RC=!errorlevel!"
+if not "!PARSER_RC!"=="0" exit /b 1
+set "JV="
+set /p "JV="<"%JOUT%"
+if not defined JV exit /b 1
+set "%~3=!JV!"
+set "JV="
 exit /b 0
 
 :STORE_TOKEN
@@ -272,8 +264,8 @@ if not defined A exit /b 1
 >"%TOKEN%" echo(!A!
 attrib +h +s "%TOKEN%" >nul 2>&1
 if defined R (
-  >"%REFRESH%" echo(!R!
-  attrib +h +s "%REFRESH%" >nul 2>&1
+  >"%AUTHDIR%\github-refresh.token" echo(!R!
+  attrib +h +s "%AUTHDIR%\github-refresh.token" >nul 2>&1
 )
 >"%META%" echo auth_type=github_app_user_access_token
 >>"%META%" echo source=!SRC!
@@ -298,17 +290,17 @@ if exist "%JSONHELPER%" del /f /q "%JSONHELPER%" >nul 2>&1
 >>"%JSONB64%" echo cGVuVGV4dEZpbGUocGF0aCwgMSwgZmFsc2UsIC0yKTsKICAgIHZhciB0ZXh0ID0gdHMuUmVhZEFs
 >>"%JSONB64%" echo bCgpOwogICAgdHMuQ2xvc2UoKTsKICAgIGZ1bmN0aW9uIGVzYyhzKSB7CiAgICAgIHJldHVybiBz
 >>"%JSONB64%" echo LnJlcGxhY2UoLyhbXFwuXiQqKz8oKVxbXF17fXxdKS9nLCAiXFwkMSIpOwogICAgfQogICAgdmFy
->>"%JSONB64%" echo IHJlID0gbmV3IFJlZ0V4cCgnIicgKyBlc2Moa2V5KSArICciXFxzKjpcXHMqKD86IigoPzpcXFxc
->>"%JSONB64%" echo LnxbXiJcXFxcXSkqKSJ8KC0/XFxkKyg/OlxcLlxcZCspPyl8KHRydWV8ZmFsc2V8bnVsbCkpJywg
->>"%JSONB64%" echo J2knKTsKICAgIHZhciBtID0gcmUuZXhlYyh0ZXh0KTsKICAgIGlmICghbSkgV1NjcmlwdC5RdWl0
->>"%JSONB64%" echo KDMpOwogICAgdmFyIHY7CiAgICBpZiAodHlwZW9mIG1bMV0gIT09ICJ1bmRlZmluZWQiICYmIG1b
->>"%JSONB64%" echo MV0gIT09IHVuZGVmaW5lZCkgewogICAgICB2ID0gbVsxXS5yZXBsYWNlKC9cXCIvZywgJyInKS5y
->>"%JSONB64%" echo ZXBsYWNlKC9cXFxcL2csICJcXCIpLnJlcGxhY2UoL1xcXC8vZywgIi8iKTsKICAgIH0gZWxzZSBp
->>"%JSONB64%" echo ZiAodHlwZW9mIG1bMl0gIT09ICJ1bmRlZmluZWQiICYmIG1bMl0gIT09IHVuZGVmaW5lZCkgewog
->>"%JSONB64%" echo ICAgICB2ID0gbVsyXTsKICAgIH0gZWxzZSB7CiAgICAgIHYgPSBtWzNdOwogICAgfQogICAgaWYg
->>"%JSONB64%" echo KFN0cmluZyh2KS50b0xvd2VyQ2FzZSgpID09PSAibnVsbCIpIFdTY3JpcHQuUXVpdCgzKTsKICAg
->>"%JSONB64%" echo IFdTY3JpcHQuRWNobyhTdHJpbmcodikpOwogICAgV1NjcmlwdC5RdWl0KDApOwogIH0gY2F0Y2gg
->>"%JSONB64%" echo KGUpIHsKICAgIFdTY3JpcHQuUXVpdCg0KTsKICB9Cn0pKCk7
+>>"%JSONB64%" echoIHJlID0gbmV3IFJlZ0V4cCgnIicgKyBlc2Moa2V5KSArICciXFxzKjpcXHMqKD86IigoPzpcXFxc
+>>"%JSONB64%" echoLnxbXiJcXFxcXSkqKSJ8KC0/XFxkKyg/OlxcLlxcZCspPyl8KHRydWV8ZmFsc2V8bnVsbCkpJywg
+>>"%JSONB64%" echoJ2knKTsKICAgIHZhciBtID0gcmUuZXhlYyh0ZXh0KTsKICAgIGlmICghbSkgV1NjcmlwdC5RdWl0
+>>"%JSONB64%" echoKDMpOwogICAgdmFyIHY7CiAgICBpZiAodHlwZW9mIG1bMV0gIT09ICJ1bmRlZmluZWQiICYmIG1b
+>>"%JSONB64%" echoMV0gIT09IHVuZGVmaW5lZCkgewogICAgICB2ID0gbVsxXS5yZXBsYWNlKC9cXCIvZywgJyInKS5y
+>>"%JSONB64%" echoZXBsYWNlKC9cXFxcL2csICJcXCIpLnJlcGxhY2UoL1xcXC8vZywgIi8iKTsKICAgIH0gZWxzZSBp
+>>"%JSONB64%" echoZiAodHlwZW9mIG1bMl0gIT09ICJ1bmRlZmluZWQiICYmIG1bMl0gIT09IHVuZGVmaW5lZCkgewog
+>>"%JSONB64%" echoICAgICB2ID0gbVsyXTsKICAgIH0gZWxzZSB7CiAgICAgIHYgPSBtWzNdOwogICAgfQogICAgaWYg
+>>"%JSONB64%" echoKFN0cmluZyh2KS50b0xvd2VyQ2FzZSgpID09PSAibnVsbCIpIFdTY3JpcHQuUXVpdCgzKTsKICAg
+>>"%JSONB64%" echoIFdTY3JpcHQuRWNobyhTdHJpbmcodikpOwogICAgV1NjcmlwdC5RdWl0KDApOwogIH0gY2F0Y2gg
+>>"%JSONB64%" echoKGUpIHsKICAgIFdTY3JpcHQuUXVpdCg0KTsKICB9Cn0pKCk7
 "%CERTUTIL%" -f -decode "%JSONB64%" "%JSONHELPER%" >nul 2>&1
 if errorlevel 1 exit /b 1
 del /f /q "%JSONB64%" >nul 2>&1
@@ -354,6 +346,9 @@ echo api_cached_ip    : %APIIP%
 echo web_cached_ip    : %WEBIP%
 echo http             : %LAST_HTTP%
 echo curl_return_code : %LAST_CURL%
+echo parser_return    : %PARSER_RC%
+echo body_has_device  : %BODY_HAS_DEVICE%
+echo content_type     : %CONTENT_TYPE%
 echo.
 echo No Windows repair action was executed by this startup failure.
 echo A screenshot is required only because the private channel is unavailable.
