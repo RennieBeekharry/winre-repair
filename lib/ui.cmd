@@ -1,8 +1,9 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-rem WR-MODULE: ui 2026.08.15-0048-ET
-rem RescueMeAI WinRE console renderer v4.
+rem WR-MODULE: ui 2026.08.15-0825-ET
+rem RescueMeAI WinRE console renderer v5.
 rem Normal results are reported automatically. Human prompts are reserved for genuine local actions.
+rem APP_FATAL screens expose safe structured diagnostics so a single photo identifies the failure location.
 
 set "RMAI_UI_DESC=AI-ASSISTED WINDOWS RECOVERY"
 set "RMAI_UI_LEGAL_BASE=https://github.com/RennieBeekharry/winre-repair"
@@ -22,6 +23,7 @@ if /i "%~1"=="section" goto :SECTION
 if /i "%~1"=="center" goto :CENTER
 if /i "%~1"=="result" goto :RESULT
 if /i "%~1"=="localaction" goto :LOCAL_ACTION
+if /i "%~1"=="appfatal" goto :APP_FATAL
 if /i "%~1"=="roadmap" goto :ROADMAP
 if /i "%~1"=="readiness" goto :READINESS
 if /i "%~1"=="progress" goto :PROGRESS
@@ -280,6 +282,70 @@ if defined LA_REASON (
 echo WHAT HAPPENS NEXT
 echo   RescueMeAI will continue automatically when it can verify that the local action is complete.
 echo   Do not type pass, fail, or warning unless this screen explicitly asks for text.
+echo %RMAI_UI_BORDER%
+exit /b 0
+
+:APP_FATAL
+rem appfatal VERSION INTERNET WINDOWS_CHANGE ERROR_ID STAGE COMPONENT OPERATION REASON
+rem Optional safe technical values are supplied through RMAI_FATAL_* environment variables.
+set "AF_VERSION=%~2"
+set "AF_INTERNET=%~3"
+set "AF_CHANGE=%~4"
+set "AF_ID=%~5"
+set "AF_STAGE=%~6"
+set "AF_COMPONENT=%~7"
+set "AF_OPERATION=%~8"
+set "AF_REASON=%~9"
+if not defined AF_VERSION set "AF_VERSION=UNKNOWN"
+if not defined AF_INTERNET set "AF_INTERNET=UNKNOWN"
+if not defined AF_CHANGE set "AF_CHANGE=STOPPED"
+if not defined AF_ID set "AF_ID=RMAI-UNCLASSIFIED"
+if not defined AF_STAGE set "AF_STAGE=UNKNOWN"
+if not defined AF_COMPONENT set "AF_COMPONENT=UNKNOWN"
+if not defined AF_OPERATION set "AF_OPERATION=UNKNOWN"
+if not defined AF_REASON set "AF_REASON=RescueMeAI could not continue safely."
+set "AF_LAST=%RMAI_FATAL_LAST_SUCCESS%"
+set "AF_HTTP=%RMAI_FATAL_HTTP%"
+set "AF_CURL=%RMAI_FATAL_CURL%"
+set "AF_RC=%RMAI_FATAL_RETURN_CODE%"
+set "AF_LOG=%RMAI_FATAL_LOG_PATH%"
+set "AF_EXTRA=%RMAI_FATAL_EXTRA%"
+if not defined AF_LAST set "AF_LAST=Not recorded"
+if not defined AF_HTTP set "AF_HTTP=N/A"
+if not defined AF_CURL set "AF_CURL=N/A"
+if not defined AF_RC set "AF_RC=N/A"
+if not defined AF_LOG set "AF_LOG=C:\WinRERepair\APP_FATAL.txt"
+call :SETUP
+call :DRAW_HEADER "%AF_VERSION%" "%AF_INTERNET%" "APPLICATION FAILURE / APP_FATAL" "%AF_CHANGE%" "%RMAI_UI_DESC%" "ERROR"
+echo.
+echo Error ID        : %AF_ID%
+echo.
+echo EXACT FAILURE LOCATION
+echo %RMAI_UI_RULE%
+echo Stage           : %AF_STAGE%
+echo Component       : %AF_COMPONENT%
+echo Operation       : %AF_OPERATION%
+echo Reason          : %AF_REASON%
+echo Last success    : %AF_LAST%
+echo.
+echo TECHNICAL DIAGNOSTICS - SAFE TO PHOTOGRAPH
+echo %RMAI_UI_RULE%
+echo Return code     : %AF_RC%
+echo HTTP status     : %AF_HTTP%
+echo curl return code: %AF_CURL%
+if defined AF_EXTRA echo Additional      : %AF_EXTRA%
+echo.
+echo LOCAL EVIDENCE
+echo %RMAI_UI_RULE%
+echo %AF_LOG%
+echo.
+echo WHAT YOU NEED TO DO
+echo %RMAI_UI_RULE%
+echo Take one photo of this entire screen and send it to ChatGPT.
+echo The Error ID and exact failure location identify where RescueMeAI stopped.
+echo Do NOT photograph or send token files, refresh tokens, private keys, or other secrets.
+echo.
+echo This APP_FATAL screen remains visible until you press a key.
 echo %RMAI_UI_BORDER%
 exit /b 0
 
