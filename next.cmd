@@ -2,13 +2,13 @@
 setlocal EnableExtensions EnableDelayedExpansion
 rem WR_RISK=REPAIR_WRITE
 rem WR_LOCAL_AUTH=NOT_REQUIRED
-rem WR_SUMMARY=Resume RescueMeAI with robust local JSON parsing, secure HTTPS transport, and self-healing GitHub App authorization.
-rem WR_ACTION=START_RESCUEMEAI_SECURE_AUTONOMOUS_V13
+rem WR_SUMMARY=Resume RescueMeAI with robust local JSON parsing, secure HTTPS transport, self-healing GitHub App authorization, and clean per-launch diagnostics.
+rem WR_ACTION=START_RESCUEMEAI_SECURE_AUTONOMOUS_V14
 rem WR_TARGET=RescueMeAI runtime and private command channel only.
 rem WR_CONSEQUENCE=Updates RescueMeAI runtime modules and reconnects secure command transport. It does not modify Windows recovery state.
 rem WR_ROLLBACK=Runtime-only startup update; no Windows recovery rollback is required.
 
-set "COMMAND_VERSION=RMAI-2026.08.15-AGENT-START-13"
+set "COMMAND_VERSION=RMAI-2026.08.15-AGENT-START-14"
 set "WORK=C:\WinRERepair"
 set "RUNTIME=%WORK%\runtime"
 set "CONFIG=%WORK%\agent.cfg"
@@ -28,6 +28,8 @@ set "FAIL_REASON=RescueMeAI could not resume the secure recovery session."
 title RescueMeAI - Windows Recovery
 if not exist "%WORK%" md "%WORK%" >nul 2>&1
 if not exist "%RUNTIME%" md "%RUNTIME%" >nul 2>&1
+rem Never display a previous session's GitHub error as the current failure.
+if exist "%WORK%\GITHUB_RESULT.txt" del /f /q "%WORK%\GITHUB_RESULT.txt" >nul 2>&1
 if not exist "%CURL%" goto :FATAL
 if not exist "%FINDSTR%" goto :FATAL
 if not exist "%AGENT%" goto :FATAL
@@ -66,7 +68,7 @@ if errorlevel 1 (
 
 >"%RUNTIME%\runtime-sync.cmd" echo @echo off
 >>"%RUNTIME%\runtime-sync.cmd" echo setlocal EnableExtensions
->>"%RUNTIME%\runtime-sync.cmd" echo rem WR-MODULE: runtime-local-ready 2026.08.15-START-13
+>>"%RUNTIME%\runtime-sync.cmd" echo rem WR-MODULE: runtime-local-ready 2026.08.15-START-14
 >>"%RUNTIME%\runtime-sync.cmd" echo set "RUNTIME=C:\WinRERepair\runtime"
 >>"%RUNTIME%\runtime-sync.cmd" echo for %%%%F in ^(ui.cmd network.cmd resolve.cmd reporting.cmd github-auth.cmd safety.cmd agent-core.js json-value-v1.js^) do if not exist "%%RUNTIME%%\%%%%F" exit /b 91
 >>"%RUNTIME%\runtime-sync.cmd" echo exit /b 0
@@ -97,7 +99,7 @@ set "FAIL_REASON=The persistent RescueMeAI agent stopped unexpectedly with retur
 goto :FATAL
 
 :STAGE_FAIL
-set "FAIL_REASON=Could not stage one of the START-13 runtime modules over validated HTTPS."
+set "FAIL_REASON=Could not stage one of the START-14 runtime modules over validated HTTPS."
 goto :FATAL
 
 :FETCH_MODULE
