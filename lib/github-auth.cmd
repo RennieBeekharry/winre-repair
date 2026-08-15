@@ -1,260 +1,85 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-rem WR-MODULE: github-auth 2026.08.14-1180-ET
-rem RescueMeAI GitHub App device flow for WinRE using only CMD + curl.
-rem No classic OAuth scopes. No client secret. No JScript dependency.
+rem WR-MODULE: github-auth 2026.08.15-V2-SELF-HEALING-TLS
+rem RescueMeAI GitHub App user-token auth for WinRE.
+rem - HTTPS/TLS only.
+rem - Refreshes expiring user tokens.
+rem - Falls back to GitHub device flow when refresh is invalid/expired.
+rem - Never writes access/refresh tokens to GitHub reports.
 
 if /i "%~1"=="authorize" goto :AUTHORIZE
-if /i "%~1"=="upload" goto :UPLOAD
 if /i "%~1"=="refresh" goto :REFRESH
+if /i "%~1"=="upload" goto :UPLOAD
 exit /b 64
 
 :INIT
-set "WR_GA_WORK=C:\WinRERepair"
-set "WR_GA_CONFIG=%WR_GA_WORK%\agent.cfg"
-set "WR_GA_AUTHDIR=%WR_GA_WORK%\.auth"
-set "WR_GA_TOKEN=%WR_GA_AUTHDIR%\github-logs.token"
-set "WR_GA_REFRESH=%WR_GA_AUTHDIR%\github-refresh.token"
-set "WR_GA_TOKENMETA=%WR_GA_AUTHDIR%\github-token.meta"
-set "WR_GA_REPORT=%WR_GA_WORK%\LAST_RUN_REPORT.txt"
-set "WR_GA_DETAILS=%WR_GA_WORK%\RUN_DETAILS.txt"
-set "WR_GA_RESULT=%WR_GA_WORK%\GITHUB_RESULT.txt"
-set "WR_GA_CURLERR=%WR_GA_WORK%\GITHUB_CURL_ERROR.txt"
-set "WR_GA_CURL=C:\Windows\System32\curl.exe"
-set "WR_GA_CERTUTIL=C:\Windows\System32\certutil.exe"
-set "WR_GA_FINDSTR=C:\Windows\System32\findstr.exe"
-set "WR_GA_PING=X:\Windows\System32\ping.exe"
-set "WR_GA_APIHOST=api.github.com"
-set "WR_GA_WEBHOST=github.com"
-set "WR_GA_APIIP="
-set "WR_GA_WEBIP="
-set "WR_GA_LOGREPO="
-set "WR_GA_CLIENTID="
-set "WR_GA_APPID="
-set "WR_GA_REPOSITORY_ID="
-set "UPLOAD_HTTP="
-set "UPLOAD_CURL_RC="
-
-if not exist "%WR_GA_WORK%" md "%WR_GA_WORK%" >nul 2>&1
-if not exist "%WR_GA_AUTHDIR%" md "%WR_GA_AUTHDIR%" >nul 2>&1
-if not exist "%WR_GA_CURL%" (
-  call :RESULT FAIL "Required curl.exe is missing." LOCAL "" 91
-  exit /b 91
+set "GA_WORK=C:\WinRERepair"
+set "GA_CONFIG=%GA_WORK%\agent.cfg"
+set "GA_AUTHDIR=%GA_WORK%\.auth"
+set "GA_TOKEN=%GA_AUTHDIR%\github-logs.token"
+set "GA_REFRESH=%GA_AUTHDIR%\github-refresh.token"
+set "GA_META=%GA_AUTHDIR%\github-token.meta"
+set "GA_RESULT=%GA_WORK%\GITHUB_RESULT.txt"
+set "GA_CURL=C:\Windows\System32\curl.exe"
+set "GA_CERTUTIL=C:\Windows\System32\certutil.exe"
+set "GA_RESOLVE=%GA_WORK%\runtime\resolve.cmd"
+set "GA_APIHOST=api.github.com"
+set "GA_WEBHOST=github.com"
+set "GA_LOGREPO="
+set "GA_REPOID="
+set "GA_CLIENTID="
+set "GA_APPID="
+set "GA_APIIP="
+set "GA_WEBIP="
+set "GA_TLS=--ssl-revoke-best-effort"
+set "GA_LAST_HTTP="
+set "GA_LAST_CURL="
+if not exist "%GA_WORK%" md "%GA_WORK%" >nul 2>&1
+if not exist "%GA_AUTHDIR%" md "%GA_AUTHDIR%" >nul 2>&1
+if not exist "%GA_CURL%" call :FAIL 91 "Required curl.exe is missing." & exit /b 91
+if not exist "%GA_CERTUTIL%" call :FAIL 91 "Required certutil.exe is missing." & exit /b 91
+if not exist "%GA_CONFIG%" call :FAIL 91 "RescueMeAI configuration is missing." & exit /b 91
+if not exist "%GA_RESOLVE%" call :FAIL 91 "RescueMeAI secure resolver is missing." & exit /b 91
+for /f "usebackq tokens=1,* delims==" %%A in ("%GA_CONFIG%") do (
+  if /i "%%A"=="LOG_REPO" set "GA_LOGREPO=%%B"
+  if /i "%%A"=="GITHUB_REPOSITORY_ID" set "GA_REPOID=%%B"
+  if /i "%%A"=="GITHUB_APP_CLIENT_ID" set "GA_CLIENTID=%%B"
+  if /i "%%A"=="GITHUB_APP_ID" set "GA_APPID=%%B"
 )
-if not exist "%WR_GA_CERTUTIL%" (
-  call :RESULT FAIL "Required certutil.exe is missing." LOCAL "" 91
-  exit /b 91
-)
-if not exist "%WR_GA_FINDSTR%" (
-  call :RESULT FAIL "Required findstr.exe is missing." LOCAL "" 91
-  exit /b 91
-)
-if not exist "%WR_GA_CONFIG%" (
-  call :RESULT FAIL "RescueMeAI configuration is missing." LOCAL "" 91
-  exit /b 91
-)
-if exist "%WR_GA_WORK%\github-api-ip.txt" set /p "WR_GA_APIIP="<"%WR_GA_WORK%\github-api-ip.txt"
-if exist "%WR_GA_WORK%\github-web-ip.txt" set /p "WR_GA_WEBIP="<"%WR_GA_WORK%\github-web-ip.txt"
-for /f "usebackq tokens=1,* delims==" %%A in ("%WR_GA_CONFIG%") do (
-  if /i "%%A"=="LOG_REPO" set "WR_GA_LOGREPO=%%B"
-  if /i "%%A"=="GITHUB_APP_CLIENT_ID" set "WR_GA_CLIENTID=%%B"
-  if /i "%%A"=="GITHUB_APP_ID" set "WR_GA_APPID=%%B"
-  if /i "%%A"=="GITHUB_REPOSITORY_ID" set "WR_GA_REPOSITORY_ID=%%B"
-)
-if not defined WR_GA_LOGREPO (
-  call :RESULT FAIL "LOG_REPO configuration is missing." LOCAL "" 91
-  exit /b 91
-)
-if not defined WR_GA_CLIENTID (
-  call :RESULT FAIL "GitHub App Client ID configuration is missing." LOCAL "" 91
-  exit /b 91
-)
-if not defined WR_GA_APPID (
-  call :RESULT FAIL "GitHub App ID configuration is missing." LOCAL "" 91
-  exit /b 91
-)
-if not defined WR_GA_REPOSITORY_ID (
-  call :RESULT FAIL "GitHub repository ID restriction is missing." LOCAL "" 91
-  exit /b 91
-)
-if not defined WR_GA_APIIP (
-  call :RESULT FAIL "Validated api.github.com address is unavailable." LOCAL "" 92
-  exit /b 92
-)
-if not defined WR_GA_WEBIP (
-  call :RESULT FAIL "Validated github.com address is unavailable." LOCAL "" 92
-  exit /b 92
-)
+if not defined GA_LOGREPO call :FAIL 91 "LOG_REPO configuration is missing." & exit /b 91
+if not defined GA_REPOID call :FAIL 91 "GitHub repository restriction is missing." & exit /b 91
+if not defined GA_CLIENTID call :FAIL 91 "GitHub App Client ID is missing." & exit /b 91
+call "%GA_RESOLVE%" resolve "%GA_APIHOST%" GA_APIIP
+if errorlevel 1 call :FAIL 92 "Could not establish a validated HTTPS route to api.github.com." & exit /b 92
+call "%GA_RESOLVE%" resolve "%GA_WEBHOST%" GA_WEBIP
+if errorlevel 1 call :FAIL 92 "Could not establish a validated HTTPS route to github.com." & exit /b 92
 exit /b 0
 
 :AUTHORIZE
 call :INIT
 if errorlevel 1 exit /b %errorlevel%
+call :AUTHORIZE_CORE
+exit /b %errorlevel%
 
-rem Prefer a currently valid short-lived GitHub App user token.
-if exist "%WR_GA_TOKEN%" (
-  call :UPLOAD_INTERNAL "bootstrap-existing"
+:AUTHORIZE_CORE
+if exist "%GA_TOKEN%" (
+  call :TEST_TOKEN
   if not errorlevel 1 exit /b 0
-  if "!UPLOAD_HTTP!"=="401" if exist "%WR_GA_REFRESH%" (
-    call :REFRESH_INTERNAL
-    if not errorlevel 1 (
-      call :UPLOAD_INTERNAL "bootstrap-refreshed"
-      if not errorlevel 1 exit /b 0
-    )
-  )
-  if "!UPLOAD_HTTP!"=="403" exit /b 90
-  if "!UPLOAD_HTTP!"=="404" exit /b 90
-  del /f /q /a "%WR_GA_TOKEN%" >nul 2>&1
 )
-
-rem If only a refresh token remains, attempt rotation before re-pairing.
-if exist "%WR_GA_REFRESH%" (
-  call :REFRESH_INTERNAL
+if exist "%GA_REFRESH%" (
+  call :REFRESH_CORE
   if not errorlevel 1 (
-    call :UPLOAD_INTERNAL "bootstrap-refreshed"
+    call :TEST_TOKEN
     if not errorlevel 1 exit /b 0
-    if "!UPLOAD_HTTP!"=="403" exit /b 90
-    if "!UPLOAD_HTTP!"=="404" exit /b 90
   )
-  del /f /q /a "%WR_GA_REFRESH%" >nul 2>&1
 )
-
-set "DEVICE_JSON=%WR_GA_WORK%\github-device.json"
-set "DEVICE_HTTP=%WR_GA_WORK%\github-device-http.txt"
-if exist "%DEVICE_JSON%" del /f /q "%DEVICE_JSON%" >nul 2>&1
-if exist "%DEVICE_HTTP%" del /f /q "%DEVICE_HTTP%" >nul 2>&1
-if exist "%WR_GA_CURLERR%" del /f /q "%WR_GA_CURLERR%" >nul 2>&1
-
-rem GitHub App device flow requests only the Client ID here. There is no
-rem classic OAuth scope request; app permissions come from the GitHub App.
-"%WR_GA_CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 15 --max-time 120 --resolve "%WR_GA_WEBHOST%:443:%WR_GA_WEBIP%" -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data "client_id=%WR_GA_CLIENTID%" "https://github.com/login/device/code" -o "%DEVICE_JSON%" -w "%%{http_code}" >"%DEVICE_HTTP%" 2>"%WR_GA_CURLERR%"
-set "DEVICE_CURL_RC=!errorlevel!"
-set "DEVICE_HTTP_CODE="
-if exist "%DEVICE_HTTP%" set /p "DEVICE_HTTP_CODE="<"%DEVICE_HTTP%"
-if not "!DEVICE_CURL_RC!"=="0" (
-  call :RESULT FAIL "Could not start GitHub App device authorization; curl failed." "!DEVICE_HTTP_CODE!" "" "!DEVICE_CURL_RC!"
-  exit /b 90
-)
-if not "!DEVICE_HTTP_CODE!"=="200" (
-  call :RESULT FAIL "GitHub App device authorization endpoint did not return HTTP 200." "!DEVICE_HTTP_CODE!" "" "!DEVICE_CURL_RC!"
-  exit /b 90
-)
-
-call :JSON_VALUE "%DEVICE_JSON%" "device_code" DEVICE_CODE
+rem A bad/expired refresh token is not fatal. GitHub explicitly requires restarting
+rem the device flow in that case.
+call :DEVICE_FLOW
+if errorlevel 1 exit /b %errorlevel%
+call :TEST_TOKEN
 if errorlevel 1 (
-  call :RESULT FAIL "GitHub device response did not contain device_code." "!DEVICE_HTTP_CODE!" "" 90
-  exit /b 90
-)
-call :JSON_VALUE "%DEVICE_JSON%" "user_code" USER_CODE
-if errorlevel 1 (
-  call :RESULT FAIL "GitHub device response did not contain user_code." "!DEVICE_HTTP_CODE!" "" 90
-  exit /b 90
-)
-call :JSON_VALUE "%DEVICE_JSON%" "verification_uri" VERIFY_URI
-if errorlevel 1 set "VERIFY_URI=https://github.com/login/device"
-call :JSON_VALUE "%DEVICE_JSON%" "expires_in" EXPIRES_IN
-if errorlevel 1 set "EXPIRES_IN=900"
-call :JSON_VALUE "%DEVICE_JSON%" "interval" POLL_INTERVAL
-if errorlevel 1 set "POLL_INTERVAL=5"
-
-cls
-color 0E >nul 2>&1
-echo ================================================================
-echo RESCUEMEAI - SECURE GITHUB APP PAIRING
-echo ================================================================
-echo GitHub App ID : %WR_GA_APPID%
-echo Repository    : %WR_GA_LOGREPO%
-echo Repository ID : %WR_GA_REPOSITORY_ID%
-echo.
-echo On your phone, open:
-echo.
-echo   !VERIFY_URI!
-echo.
-echo Enter this short one-time code:
-echo.
-echo                 !USER_CODE!
-echo.
-echo Approve the RescueMeAI GitHub App authorization request.
-echo This PC will continue automatically after approval.
-echo Do not close this window.
-echo ================================================================
-
-set /a "MAX_POLLS=(EXPIRES_IN/POLL_INTERVAL)+4" >nul 2>&1
-if !MAX_POLLS! LSS 10 set "MAX_POLLS=180"
-set /a POLL_COUNT=0
-
-:TOKEN_POLL
-set /a POLL_COUNT+=1
-if !POLL_COUNT! GTR !MAX_POLLS! (
-  call :RESULT FAIL "GitHub one-time device code expired before authorization completed." TIMEOUT "" 90
-  exit /b 90
-)
-call :SLEEP !POLL_INTERVAL!
-set "TOKEN_JSON=%WR_GA_WORK%\github-token.json"
-set "TOKEN_HTTP=%WR_GA_WORK%\github-token-http.txt"
-if exist "%TOKEN_JSON%" del /f /q "%TOKEN_JSON%" >nul 2>&1
-if exist "%TOKEN_HTTP%" del /f /q "%TOKEN_HTTP%" >nul 2>&1
-rem repository_id further restricts this user token to the single private
-rem RescueMeAI evidence/control repository even within the app installation.
-"%WR_GA_CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 15 --max-time 120 --resolve "%WR_GA_WEBHOST%:443:%WR_GA_WEBIP%" -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data "client_id=%WR_GA_CLIENTID%&device_code=!DEVICE_CODE!&grant_type=urn:ietf:params:oauth:grant-type:device_code&repository_id=%WR_GA_REPOSITORY_ID%" "https://github.com/login/oauth/access_token" -o "%TOKEN_JSON%" -w "%%{http_code}" >"%TOKEN_HTTP%" 2>"%WR_GA_CURLERR%"
-set "TOKEN_CURL_RC=!errorlevel!"
-set "TOKEN_HTTP_CODE="
-if exist "%TOKEN_HTTP%" set /p "TOKEN_HTTP_CODE="<"%TOKEN_HTTP%"
-if not "!TOKEN_CURL_RC!"=="0" goto :TOKEN_POLL
-if not "!TOKEN_HTTP_CODE!"=="200" goto :TOKEN_POLL
-
-set "ACCESS_TOKEN="
-call :JSON_VALUE "%TOKEN_JSON%" "access_token" ACCESS_TOKEN >nul 2>&1
-if defined ACCESS_TOKEN goto :TOKEN_RECEIVED
-set "TOKEN_ERROR="
-call :JSON_VALUE "%TOKEN_JSON%" "error" TOKEN_ERROR >nul 2>&1
-if /i "!TOKEN_ERROR!"=="authorization_pending" goto :TOKEN_POLL
-if /i "!TOKEN_ERROR!"=="slow_down" (
-  call :JSON_VALUE "%TOKEN_JSON%" "interval" NEW_INTERVAL >nul 2>&1
-  if defined NEW_INTERVAL set "POLL_INTERVAL=!NEW_INTERVAL!"
-  if not defined NEW_INTERVAL set /a POLL_INTERVAL+=5
-  goto :TOKEN_POLL
-)
-if /i "!TOKEN_ERROR!"=="access_denied" (
-  call :RESULT FAIL "GitHub App device authorization was denied." "!TOKEN_HTTP_CODE!" "" "!TOKEN_CURL_RC!"
-  exit /b 90
-)
-if /i "!TOKEN_ERROR!"=="expired_token" (
-  call :RESULT FAIL "GitHub one-time device code expired." "!TOKEN_HTTP_CODE!" "" "!TOKEN_CURL_RC!"
-  exit /b 90
-)
-if /i "!TOKEN_ERROR!"=="device_flow_disabled" (
-  call :RESULT FAIL "Device Flow is disabled for the RescueMeAI GitHub App. Enable Device Flow in the app settings." "!TOKEN_HTTP_CODE!" "" "!TOKEN_CURL_RC!"
-  exit /b 90
-)
-if /i "!TOKEN_ERROR!"=="incorrect_client_credentials" (
-  call :RESULT FAIL "The configured RescueMeAI GitHub App Client ID was rejected by GitHub." "!TOKEN_HTTP_CODE!" "" "!TOKEN_CURL_RC!"
-  exit /b 90
-)
-if defined TOKEN_ERROR (
-  call :RESULT FAIL "GitHub App device authorization returned error: !TOKEN_ERROR!" "!TOKEN_HTTP_CODE!" "" "!TOKEN_CURL_RC!"
-  exit /b 90
-)
-goto :TOKEN_POLL
-
-:TOKEN_RECEIVED
-set "REFRESH_TOKEN="
-set "TOKEN_EXPIRES_IN="
-set "REFRESH_EXPIRES_IN="
-call :JSON_VALUE "%TOKEN_JSON%" "refresh_token" REFRESH_TOKEN >nul 2>&1
-call :JSON_VALUE "%TOKEN_JSON%" "expires_in" TOKEN_EXPIRES_IN >nul 2>&1
-call :JSON_VALUE "%TOKEN_JSON%" "refresh_token_expires_in" REFRESH_EXPIRES_IN >nul 2>&1
-call :STORE_TOKENS
-set "ACCESS_TOKEN="
-set "REFRESH_TOKEN="
-call :UPLOAD_INTERNAL "bootstrap-device"
-if errorlevel 1 (
-  if "!UPLOAD_HTTP!"=="403" (
-    call :RESULT FAIL "GitHub App authorization succeeded, but Contents write permission is not available for the private recovery repository." "!UPLOAD_HTTP!" "" "!UPLOAD_CURL_RC!"
-  )
-  if "!UPLOAD_HTTP!"=="404" (
-    call :RESULT FAIL "GitHub App authorization succeeded, but the app cannot access the configured private recovery repository. Verify the app is installed on winre-repair-logs." "!UPLOAD_HTTP!" "" "!UPLOAD_CURL_RC!"
-  )
+  call :FAIL 90 "GitHub device authorization completed, but the resulting token could not access the configured private repository."
   exit /b 90
 )
 exit /b 0
@@ -262,205 +87,281 @@ exit /b 0
 :REFRESH
 call :INIT
 if errorlevel 1 exit /b %errorlevel%
-call :REFRESH_INTERNAL
+call :REFRESH_CORE
 exit /b %errorlevel%
 
-:REFRESH_INTERNAL
-if not exist "%WR_GA_REFRESH%" (
-  call :RESULT FAIL "No GitHub App refresh token is available; device pairing is required." LOCAL "" 90
-  exit /b 90
-)
-set "SAVED_REFRESH="
-set /p "SAVED_REFRESH="<"%WR_GA_REFRESH%"
-if not defined SAVED_REFRESH (
-  call :RESULT FAIL "Saved GitHub App refresh token is empty; device pairing is required." LOCAL "" 90
-  exit /b 90
-)
-set "REFRESH_JSON=%WR_GA_WORK%\github-refresh.json"
-set "REFRESH_HTTP_FILE=%WR_GA_WORK%\github-refresh-http.txt"
-if exist "%REFRESH_JSON%" del /f /q "%REFRESH_JSON%" >nul 2>&1
-if exist "%REFRESH_HTTP_FILE%" del /f /q "%REFRESH_HTTP_FILE%" >nul 2>&1
-"%WR_GA_CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 15 --max-time 120 --resolve "%WR_GA_WEBHOST%:443:%WR_GA_WEBIP%" -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data "client_id=%WR_GA_CLIENTID%&grant_type=refresh_token&refresh_token=!SAVED_REFRESH!" "https://github.com/login/oauth/access_token" -o "%REFRESH_JSON%" -w "%%{http_code}" >"%REFRESH_HTTP_FILE%" 2>"%WR_GA_CURLERR%"
-set "REFRESH_CURL_RC=!errorlevel!"
-set "SAVED_REFRESH="
-set "REFRESH_HTTP="
-if exist "%REFRESH_HTTP_FILE%" set /p "REFRESH_HTTP="<"%REFRESH_HTTP_FILE%"
-if not "!REFRESH_CURL_RC!"=="0" (
-  call :RESULT FAIL "GitHub App token refresh failed at curl/network/TLS." "!REFRESH_HTTP!" "" "!REFRESH_CURL_RC!"
-  exit /b 90
-)
-if not "!REFRESH_HTTP!"=="200" (
-  call :RESULT FAIL "GitHub App token refresh endpoint did not return HTTP 200." "!REFRESH_HTTP!" "" "!REFRESH_CURL_RC!"
-  exit /b 90
-)
-set "ACCESS_TOKEN="
-set "REFRESH_TOKEN="
-set "TOKEN_EXPIRES_IN="
-set "REFRESH_EXPIRES_IN="
-call :JSON_VALUE "%REFRESH_JSON%" "access_token" ACCESS_TOKEN >nul 2>&1
-call :JSON_VALUE "%REFRESH_JSON%" "refresh_token" REFRESH_TOKEN >nul 2>&1
-call :JSON_VALUE "%REFRESH_JSON%" "expires_in" TOKEN_EXPIRES_IN >nul 2>&1
-call :JSON_VALUE "%REFRESH_JSON%" "refresh_token_expires_in" REFRESH_EXPIRES_IN >nul 2>&1
-if not defined ACCESS_TOKEN (
-  set "REFRESH_ERROR="
-  call :JSON_VALUE "%REFRESH_JSON%" "error" REFRESH_ERROR >nul 2>&1
-  if defined REFRESH_ERROR (
-    call :RESULT FAIL "GitHub App token refresh returned error: !REFRESH_ERROR!" "!REFRESH_HTTP!" "" "!REFRESH_CURL_RC!"
-  ) else (
-    call :RESULT FAIL "GitHub App token refresh did not return an access token." "!REFRESH_HTTP!" "" "!REFRESH_CURL_RC!"
+:REFRESH_CORE
+if not exist "%GA_REFRESH%" exit /b 90
+set "GA_SAVED_REFRESH="
+set /p "GA_SAVED_REFRESH="<"%GA_REFRESH%"
+if not defined GA_SAVED_REFRESH exit /b 90
+set "GA_JSON=%GA_WORK%\github-refresh-v2.json"
+set "GA_HTTP=%GA_WORK%\github-refresh-v2-http.txt"
+if exist "%GA_JSON%" del /f /q "%GA_JSON%" >nul 2>&1
+"%GA_CURL%" %GA_TLS% --silent --show-error --connect-timeout 15 --max-time 120 --resolve "%GA_WEBHOST%:443:%GA_WEBIP%" -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "client_id=%GA_CLIENTID%" --data-urlencode "grant_type=refresh_token" --data-urlencode "refresh_token=!GA_SAVED_REFRESH!" "https://github.com/login/oauth/access_token" -o "%GA_JSON%" -w "%%{http_code}" >"%GA_HTTP%" 2>"%GA_WORK%\github-refresh-v2-curl.txt"
+set "GA_LAST_CURL=!errorlevel!"
+set "GA_LAST_HTTP="
+if exist "%GA_HTTP%" set /p "GA_LAST_HTTP="<"%GA_HTTP%"
+set "GA_SAVED_REFRESH="
+if not "!GA_LAST_CURL!"=="0" exit /b 90
+if not "!GA_LAST_HTTP!"=="200" exit /b 90
+set "GA_NEW_ACCESS="
+set "GA_NEW_REFRESH="
+set "GA_ERROR="
+call :JSON_GET "%GA_JSON%" access_token GA_NEW_ACCESS >nul 2>&1
+if not defined GA_NEW_ACCESS (
+  call :JSON_GET "%GA_JSON%" error GA_ERROR >nul 2>&1
+  if /i "!GA_ERROR!"=="bad_refresh_token" (
+    if exist "%GA_REFRESH%" move /y "%GA_REFRESH%" "%GA_REFRESH%.stale" >nul 2>&1
+    if exist "%GA_TOKEN%" del /f /q /a "%GA_TOKEN%" >nul 2>&1
   )
   exit /b 90
 )
-call :STORE_TOKENS
-set "ACCESS_TOKEN="
-set "REFRESH_TOKEN="
-call :RESULT PASS "GitHub App user token refreshed." "!REFRESH_HTTP!" "" "!REFRESH_CURL_RC!"
+call :JSON_GET "%GA_JSON%" refresh_token GA_NEW_REFRESH >nul 2>&1
+call :STORE_TOKEN "!GA_NEW_ACCESS!" "!GA_NEW_REFRESH!" REFRESH
+set "GA_NEW_ACCESS="
+set "GA_NEW_REFRESH="
 exit /b 0
 
-:STORE_TOKENS
-if not defined ACCESS_TOKEN exit /b 91
->"%WR_GA_TOKEN%" echo(!ACCESS_TOKEN!
-attrib +h +s "%WR_GA_TOKEN%" >nul 2>&1
-if defined REFRESH_TOKEN (
-  >"%WR_GA_REFRESH%" echo(!REFRESH_TOKEN!
-  attrib +h +s "%WR_GA_REFRESH%" >nul 2>&1
-) else (
-  if exist "%WR_GA_REFRESH%" del /f /q /a "%WR_GA_REFRESH%" >nul 2>&1
+:DEVICE_FLOW
+set "GA_DEVJSON=%GA_WORK%\github-device-v14.json"
+set "GA_DEVHTTP=%GA_WORK%\github-device-v14-http.txt"
+"%GA_CURL%" %GA_TLS% --silent --show-error --connect-timeout 15 --max-time 120 --resolve "%GA_WEBHOST%:443:%GA_WEBIP%" -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "client_id=%GA_CLIENTID%" "https://github.com/login/device/code" -o "%GA_DEVJSON%" -w "%%{http_code}" >"%GA_DEVHTTP%" 2>"%GA_WORK%\github-device-v14-curl.txt"
+set "GA_LAST_CURL=!errorlevel!"
+set "GA_LAST_HTTP="
+if exist "%GA_DEVHTTP%" set /p "GA_LAST_HTTP="<"%GA_DEVHTTP%"
+if not "!GA_LAST_CURL!"=="0" (
+  call :FAIL 90 "GitHub device authorization request failed at the HTTPS transport layer."
+  exit /b 90
 )
->"%WR_GA_TOKENMETA%" echo auth_type=github_app_user_access_token
->>"%WR_GA_TOKENMETA%" echo app_id=%WR_GA_APPID%
->>"%WR_GA_TOKENMETA%" echo client_id=%WR_GA_CLIENTID%
->>"%WR_GA_TOKENMETA%" echo repository=%WR_GA_LOGREPO%
->>"%WR_GA_TOKENMETA%" echo repository_id=%WR_GA_REPOSITORY_ID%
->>"%WR_GA_TOKENMETA%" echo access_expires_in=!TOKEN_EXPIRES_IN!
->>"%WR_GA_TOKENMETA%" echo refresh_expires_in=!REFRESH_EXPIRES_IN!
->>"%WR_GA_TOKENMETA%" echo stored_date=%date%
->>"%WR_GA_TOKENMETA%" echo stored_time=%time%
-attrib +h +s "%WR_GA_TOKENMETA%" >nul 2>&1
+if not "!GA_LAST_HTTP!"=="200" (
+  call :FAIL 90 "GitHub device authorization endpoint did not return HTTP 200."
+  exit /b 90
+)
+set "GA_DEVICE_CODE="
+set "GA_USER_CODE="
+set "GA_VERIFY_URI=https://github.com/login/device"
+set "GA_EXPIRES=900"
+set "GA_INTERVAL=5"
+set "GA_ERROR="
+call :JSON_GET "%GA_DEVJSON%" error GA_ERROR >nul 2>&1
+if defined GA_ERROR (
+  call :FAIL 90 "GitHub device authorization returned an error before pairing could start."
+  exit /b 90
+)
+call :JSON_GET "%GA_DEVJSON%" device_code GA_DEVICE_CODE
+if errorlevel 1 (
+  call :FAIL 96 "GitHub returned HTTP 200 but no device_code could be parsed."
+  exit /b 96
+)
+call :JSON_GET "%GA_DEVJSON%" user_code GA_USER_CODE
+if errorlevel 1 (
+  call :FAIL 96 "GitHub returned a device_code but no user_code could be parsed."
+  exit /b 96
+)
+call :JSON_GET "%GA_DEVJSON%" verification_uri GA_VERIFY_URI >nul 2>&1
+call :JSON_GET "%GA_DEVJSON%" expires_in GA_EXPIRES >nul 2>&1
+call :JSON_GET "%GA_DEVJSON%" interval GA_INTERVAL >nul 2>&1
+if not defined GA_EXPIRES set "GA_EXPIRES=900"
+if not defined GA_INTERVAL set "GA_INTERVAL=5"
+
+cls
+color 0E >nul 2>&1
+echo ====================================================================================================
+echo                                           RESCUEMEAI
+echo                                  LOCAL ACTION REQUIRED
+echo ====================================================================================================
+echo.
+echo Secure GitHub authorization needs renewal.
+echo.
+echo ON YOUR PHONE
+echo ----------------------------------------------------------------------------------------------------
+echo   Open: !GA_VERIFY_URI!
+echo   Enter this one-time code:
+echo.
+echo                                    !GA_USER_CODE!
+echo.
+echo   Approve the RescueMeAI GitHub App.
+echo.
+echo WHAT HAPPENS NEXT
+echo ----------------------------------------------------------------------------------------------------
+echo   RescueMeAI will detect approval automatically and continue.
+echo   No Windows repair runs during authorization.
+echo.
+
+set /a GA_MAXPOLLS=(GA_EXPIRES/GA_INTERVAL)+4 >nul 2>&1
+if !GA_MAXPOLLS! LSS 10 set "GA_MAXPOLLS=180"
+set /a GA_POLL=0
+:DEVICE_POLL
+set /a GA_POLL+=1
+if !GA_POLL! GTR !GA_MAXPOLLS! (
+  call :FAIL 90 "GitHub device authorization code expired before approval completed."
+  exit /b 90
+)
+timeout /t !GA_INTERVAL! /nobreak >nul
+set "GA_TJSON=%GA_WORK%\github-token-v14.json"
+set "GA_THTTP=%GA_WORK%\github-token-v14-http.txt"
+"%GA_CURL%" %GA_TLS% --silent --show-error --connect-timeout 15 --max-time 120 --resolve "%GA_WEBHOST%:443:%GA_WEBIP%" -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "client_id=%GA_CLIENTID%" --data-urlencode "device_code=!GA_DEVICE_CODE!" --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:device_code" --data-urlencode "repository_id=%GA_REPOID%" "https://github.com/login/oauth/access_token" -o "%GA_TJSON%" -w "%%{http_code}" >"%GA_THTTP%" 2>"%GA_WORK%\github-token-v14-curl.txt"
+set "GA_LAST_CURL=!errorlevel!"
+set "GA_LAST_HTTP="
+if exist "%GA_THTTP%" set /p "GA_LAST_HTTP="<"%GA_THTTP%"
+if not "!GA_LAST_CURL!"=="0" goto :DEVICE_POLL
+if not "!GA_LAST_HTTP!"=="200" goto :DEVICE_POLL
+set "GA_ACCESS="
+set "GA_NEW_REFRESH="
+set "GA_TOKEN_ERROR="
+call :JSON_GET "%GA_TJSON%" access_token GA_ACCESS >nul 2>&1
+if defined GA_ACCESS (
+  call :JSON_GET "%GA_TJSON%" refresh_token GA_NEW_REFRESH >nul 2>&1
+  call :STORE_TOKEN "!GA_ACCESS!" "!GA_NEW_REFRESH!" DEVICE
+  set "GA_ACCESS="
+  set "GA_NEW_REFRESH="
+  exit /b 0
+)
+call :JSON_GET "%GA_TJSON%" error GA_TOKEN_ERROR >nul 2>&1
+if /i "!GA_TOKEN_ERROR!"=="authorization_pending" goto :DEVICE_POLL
+if /i "!GA_TOKEN_ERROR!"=="slow_down" (
+  set /a GA_INTERVAL+=5
+  goto :DEVICE_POLL
+)
+if /i "!GA_TOKEN_ERROR!"=="access_denied" (
+  call :FAIL 90 "GitHub device authorization was denied."
+  exit /b 90
+)
+if /i "!GA_TOKEN_ERROR!"=="expired_token" (
+  call :FAIL 90 "GitHub device authorization code expired."
+  exit /b 90
+)
+if defined GA_TOKEN_ERROR (
+  call :FAIL 90 "GitHub device authorization returned an unrecoverable OAuth error."
+  exit /b 90
+)
+goto :DEVICE_POLL
+
+:TEST_TOKEN
+if not exist "%GA_TOKEN%" exit /b 1
+set "GA_ACCESS="
+set /p "GA_ACCESS="<"%GA_TOKEN%"
+if not defined GA_ACCESS exit /b 1
+set "GA_TEST=%GA_WORK%\github-token-test-v2.json"
+set "GA_TESTHTTP=%GA_WORK%\github-token-test-v2-http.txt"
+"%GA_CURL%" %GA_TLS% --silent --show-error --connect-timeout 15 --max-time 60 --resolve "%GA_APIHOST%:443:%GA_APIIP%" -H "Accept: application/vnd.github+json" -H "Authorization: Bearer !GA_ACCESS!" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repositories/%GA_REPOID%" -o "%GA_TEST%" -w "%%{http_code}" >"%GA_TESTHTTP%" 2>"%GA_WORK%\github-token-test-v2-curl.txt"
+set "GA_LAST_CURL=!errorlevel!"
+set "GA_LAST_HTTP="
+if exist "%GA_TESTHTTP%" set /p "GA_LAST_HTTP="<"%GA_TESTHTTP%"
+set "GA_ACCESS="
+if not "!GA_LAST_CURL!"=="0" exit /b 1
+if not "!GA_LAST_HTTP!"=="200" exit /b 1
+exit /b 0
+
+:STORE_TOKEN
+set "GA_STORE_ACCESS=%~1"
+set "GA_STORE_REFRESH=%~2"
+set "GA_STORE_SOURCE=%~3"
+if not defined GA_STORE_ACCESS exit /b 1
+>"%GA_TOKEN%" echo(!GA_STORE_ACCESS!
+attrib +h +s "%GA_TOKEN%" >nul 2>&1
+if defined GA_STORE_REFRESH (
+  >"%GA_REFRESH%" echo(!GA_STORE_REFRESH!
+  attrib +h +s "%GA_REFRESH%" >nul 2>&1
+)
+>"%GA_META%" echo provider=GITHUB_APP
+>>"%GA_META%" echo app_id=%GA_APPID%
+>>"%GA_META%" echo repository_id=%GA_REPOID%
+>>"%GA_META%" echo source=%GA_STORE_SOURCE%
+>>"%GA_META%" echo issued_date=%date%
+>>"%GA_META%" echo issued_time=%time%
+attrib +h +s "%GA_META%" >nul 2>&1
+set "GA_STORE_ACCESS="
+set "GA_STORE_REFRESH="
 exit /b 0
 
 :UPLOAD
 call :INIT
 if errorlevel 1 exit /b %errorlevel%
-if not exist "%WR_GA_TOKEN%" (
-  if exist "%WR_GA_REFRESH%" (
-    call :REFRESH_INTERNAL
-    if errorlevel 1 exit /b 90
-  ) else (
-    call :RESULT FAIL "Private reporting is not authorized yet; GitHub App device pairing is required." LOCAL "" 90
-    exit /b 90
+call :AUTHORIZE_CORE
+if errorlevel 1 exit /b %errorlevel%
+call :UPLOAD_CORE
+if errorlevel 1 (
+  if "!GA_LAST_HTTP!"=="401" (
+    call :REFRESH_CORE
+    if not errorlevel 1 call :UPLOAD_CORE
   )
 )
-call :UPLOAD_INTERNAL "run"
-if not errorlevel 1 exit /b 0
-if "!UPLOAD_HTTP!"=="401" if exist "%WR_GA_REFRESH%" (
-  call :REFRESH_INTERNAL
-  if errorlevel 1 exit /b 90
-  call :UPLOAD_INTERNAL "run-refreshed"
-  exit /b !errorlevel!
-)
-exit /b 90
+exit /b %errorlevel%
 
-:UPLOAD_INTERNAL
-set "UPLOAD_LABEL=%~1"
-set "LOGTOKEN="
-set /p "LOGTOKEN="<"%WR_GA_TOKEN%"
-if not defined LOGTOKEN (
-  call :RESULT FAIL "Saved GitHub App user authorization file is empty." LOCAL "" 90
-  exit /b 90
+:UPLOAD_CORE
+if not exist "%GA_TOKEN%" exit /b 90
+set "GA_ACCESS="
+set /p "GA_ACCESS="<"%GA_TOKEN%"
+if not defined GA_ACCESS exit /b 90
+set "GA_PAYLOAD=%GA_WORK%\private-report-v2.txt"
+set "GA_B64TMP=%GA_WORK%\private-report-v2.b64"
+set "GA_BODY=%GA_WORK%\private-report-v2.json"
+>"%GA_PAYLOAD%" echo PRIVATE RESCUEMEAI RECOVERY RUN REPORT
+>>"%GA_PAYLOAD%" echo ======================================
+if exist "%GA_WORK%\LAST_RUN_REPORT.txt" type "%GA_WORK%\LAST_RUN_REPORT.txt" >>"%GA_PAYLOAD%"
+if exist "%GA_WORK%\RUN_DETAILS.txt" (
+  >>"%GA_PAYLOAD%" echo.
+  >>"%GA_PAYLOAD%" echo --- RUN_DETAILS ---
+  type "%GA_WORK%\RUN_DETAILS.txt" >>"%GA_PAYLOAD%"
 )
-set "UPLOADSRC=%WR_GA_WORK%\PRIVATE_UPLOAD_REPORT.txt"
-set "B64FILE=%WR_GA_WORK%\PRIVATE_UPLOAD_REPORT.b64"
-set "B64CLEAN=%WR_GA_WORK%\PRIVATE_UPLOAD_REPORT.base64.txt"
-set "JSONFILE=%WR_GA_WORK%\PRIVATE_UPLOAD_REQUEST.json"
-set "RESPFILE=%WR_GA_WORK%\PRIVATE_UPLOAD_RESPONSE.json"
-set "HTTPFILE=%WR_GA_WORK%\PRIVATE_UPLOAD_HTTP.txt"
->"%UPLOADSRC%" echo PRIVATE RESCUEMEAI RECOVERY RUN REPORT
->>"%UPLOADSRC%" echo ======================================
-if exist "%WR_GA_REPORT%" type "%WR_GA_REPORT%" >>"%UPLOADSRC%"
-if exist "%WR_GA_DETAILS%" (
-  >>"%UPLOADSRC%" echo.
-  >>"%UPLOADSRC%" echo --- RUN_DETAILS ---
-  type "%WR_GA_DETAILS%" >>"%UPLOADSRC%"
+for %%Z in ("%GA_PAYLOAD%") do set "GA_SIZE=%%~zZ"
+if !GA_SIZE! GTR 6000 (
+  >"%GA_PAYLOAD%" echo PRIVATE RESCUEMEAI RECOVERY RUN REPORT
+  >>"%GA_PAYLOAD%" echo ======================================
+  if exist "%GA_WORK%\LAST_RUN_REPORT.txt" type "%GA_WORK%\LAST_RUN_REPORT.txt" >>"%GA_PAYLOAD%"
+  >>"%GA_PAYLOAD%" echo details_status=LOCAL_DETAILS_TOO_LARGE_FOR_CMD_UPLOAD
+  >>"%GA_PAYLOAD%" echo details_path=C:\WinRERepair\RUN_DETAILS.txt
 )
-"%WR_GA_CERTUTIL%" -f -encode "%UPLOADSRC%" "%B64FILE%" >nul 2>&1
-if errorlevel 1 (
-  set "LOGTOKEN="
-  call :RESULT FAIL "Could not encode private recovery report." LOCAL "" 91
-  exit /b 91
+if exist "%GA_B64TMP%" del /f /q "%GA_B64TMP%" >nul 2>&1
+"%GA_CERTUTIL%" -encode "%GA_PAYLOAD%" "%GA_B64TMP%" >nul 2>&1
+if errorlevel 1 exit /b 90
+set "GA_B64="
+for /f "usebackq delims=" %%L in ("%GA_B64TMP%") do (
+  echo(%%L| findstr /b /c:"-----" >nul 2>&1
+  if errorlevel 1 set "GA_B64=!GA_B64!%%L"
 )
-"%WR_GA_FINDSTR%" /v /c:"-----" /c:"CertUtil" "%B64FILE%" >"%B64CLEAN%" 2>nul
-set "B64="
-for /f "usebackq delims=" %%L in ("%B64CLEAN%") do set "B64=!B64!%%L"
-if not defined B64 (
-  set "LOGTOKEN="
-  call :RESULT FAIL "Encoded private recovery report was empty." LOCAL "" 91
-  exit /b 91
-)
-set "SAFE_LABEL=%UPLOAD_LABEL::=_%"
-set "UPLOADPATH=reports/inbox/%SAFE_LABEL%-%RANDOM%%RANDOM%.txt"
->"%JSONFILE%" echo {"message":"RescueMeAI recovery report","content":"!B64!"}
-set "PUTURL=https://api.github.com/repos/%WR_GA_LOGREPO%/contents/!UPLOADPATH!"
-if exist "%HTTPFILE%" del /f /q "%HTTPFILE%" >nul 2>&1
-"%WR_GA_CURL%" --ssl-no-revoke --silent --show-error --connect-timeout 15 --max-time 120 --resolve "%WR_GA_APIHOST%:443:%WR_GA_APIIP%" -X PUT -H "Accept: application/vnd.github+json" -H "Authorization: Bearer !LOGTOKEN!" -H "X-GitHub-Api-Version: 2026-03-10" -H "Content-Type: application/json" --data-binary "@%JSONFILE%" -o "%RESPFILE%" -w "%%{http_code}" "!PUTURL!" >"%HTTPFILE%" 2>"%WR_GA_CURLERR%"
-set "UPLOAD_CURL_RC=!errorlevel!"
-set "LOGTOKEN="
-set "UPLOAD_HTTP="
-if exist "%HTTPFILE%" set /p "UPLOAD_HTTP="<"%HTTPFILE%"
-if "!UPLOAD_CURL_RC!"=="0" if "!UPLOAD_HTTP!"=="201" (
-  call :RESULT PASS "Private report uploaded with RescueMeAI GitHub App authorization." "!UPLOAD_HTTP!" "!UPLOADPATH!" "!UPLOAD_CURL_RC!"
-  exit /b 0
-)
-if "!UPLOAD_CURL_RC!"=="0" if "!UPLOAD_HTTP!"=="200" (
-  call :RESULT PASS "Private report uploaded with RescueMeAI GitHub App authorization." "!UPLOAD_HTTP!" "!UPLOADPATH!" "!UPLOAD_CURL_RC!"
-  exit /b 0
-)
-set "UPLOAD_REASON=GitHub App private report upload failed."
-if "!UPLOAD_HTTP!"=="401" set "UPLOAD_REASON=Saved GitHub App user token is expired, invalid, or revoked."
-if "!UPLOAD_HTTP!"=="403" set "UPLOAD_REASON=RescueMeAI GitHub App authorization lacks required Contents write permission."
-if "!UPLOAD_HTTP!"=="404" set "UPLOAD_REASON=RescueMeAI GitHub App cannot access the configured private repository; verify the app installation is restricted to and includes winre-repair-logs."
-if "!UPLOAD_HTTP!"=="429" set "UPLOAD_REASON=GitHub rate limit was reached."
-if not "!UPLOAD_CURL_RC!"=="0" set "UPLOAD_REASON=Private report upload failed at curl/network/TLS."
-call :RESULT FAIL "!UPLOAD_REASON!" "!UPLOAD_HTTP!" "" "!UPLOAD_CURL_RC!"
-exit /b 90
-
-:JSON_VALUE
-set "JV_FILE=%~1"
-set "JV_KEY=%~2"
-set "JV_RET=%~3"
-set "JV_LINE="
-set "JV_TAIL="
-set "JV_VALUE="
-for /f "usebackq delims=" %%L in (`"%WR_GA_FINDSTR%" /i /c:"%JV_KEY%" "%JV_FILE%" 2^>nul`) do set "JV_LINE=%%L"
-if not defined JV_LINE exit /b 1
-set "JV_TAIL=!JV_LINE:*%JV_KEY%=!"
-set "JV_TAIL=!JV_TAIL:*:=!"
-for /f "tokens=1 delims=," %%V in ("!JV_TAIL!") do set "JV_VALUE=%%V"
-for /f "tokens=*" %%V in ("!JV_VALUE!") do set "JV_VALUE=%%V"
-set "JV_VALUE=!JV_VALUE:"=!"
-set "JV_VALUE=!JV_VALUE:}=!"
-if not defined JV_VALUE exit /b 1
-set "%JV_RET%=%JV_VALUE%"
+set "GA_PATH=reports/inbox/run-%RANDOM%%RANDOM%%RANDOM%.txt"
+>"%GA_BODY%" echo {"message":"RescueMeAI recovery report","content":"!GA_B64!"}
+set "GA_B64="
+set "GA_UPHTTP=%GA_WORK%\github-upload-v2-http.txt"
+"%GA_CURL%" %GA_TLS% --silent --show-error --connect-timeout 15 --max-time 120 --resolve "%GA_APIHOST%:443:%GA_APIIP%" -X PUT -H "Accept: application/vnd.github+json" -H "Authorization: Bearer !GA_ACCESS!" -H "X-GitHub-Api-Version: 2022-11-28" -H "Content-Type: application/json" --data-binary "@%GA_BODY%" "https://api.github.com/repos/%GA_LOGREPO%/contents/!GA_PATH!" -o "%GA_WORK%\github-upload-v2-response.json" -w "%%{http_code}" >"%GA_UPHTTP%" 2>"%GA_WORK%\github-upload-v2-curl.txt"
+set "GA_LAST_CURL=!errorlevel!"
+set "GA_LAST_HTTP="
+if exist "%GA_UPHTTP%" set /p "GA_LAST_HTTP="<"%GA_UPHTTP%"
+set "GA_ACCESS="
+if not "!GA_LAST_CURL!"=="0" exit /b 90
+if not "!GA_LAST_HTTP!"=="201" exit /b 90
 exit /b 0
 
-:SLEEP
-set "SLEEP_SECONDS=%~1"
-if not defined SLEEP_SECONDS set "SLEEP_SECONDS=5"
-if exist "%WR_GA_PING%" (
-  set /a "SLEEP_PINGS=SLEEP_SECONDS+1" >nul 2>&1
-  "%WR_GA_PING%" -n !SLEEP_PINGS! 127.0.0.1 >nul 2>&1
+:JSON_GET
+setlocal EnableDelayedExpansion
+set "JG_FILE=%~1"
+set "JG_KEY=%~2"
+set "JG_JSON="
+if not exist "!JG_FILE!" endlocal & exit /b 1
+for /f "usebackq delims=" %%L in ("!JG_FILE!") do set "JG_JSON=!JG_JSON!%%L"
+if not defined JG_JSON endlocal & exit /b 1
+set "JG_JSON=!JG_JSON:"=!"
+set "JG_JSON=!JG_JSON:{=!"
+set "JG_JSON=!JG_JSON:}=!"
+set "JG_JSON=!JG_JSON:,= !"
+set "JG_VALUE="
+for %%P in (!JG_JSON!) do (
+  for /f "tokens=1,* delims=:" %%A in ("%%P") do (
+    if /i "%%A"=="!JG_KEY!" set "JG_VALUE=%%B"
+  )
 )
-exit /b 0
+if not defined JG_VALUE endlocal & exit /b 1
+endlocal & set "%~3=%JG_VALUE%" & exit /b 0
 
-:RESULT
-set "RES_STATUS=%~1"
-set "RES_REASON=%~2"
-set "RES_HTTP=%~3"
-set "RES_PATH=%~4"
-set "RES_CURL=%~5"
->"%WR_GA_RESULT%" echo status=%RES_STATUS%
->>"%WR_GA_RESULT%" echo reason=%RES_REASON%
->>"%WR_GA_RESULT%" echo http=%RES_HTTP%
->>"%WR_GA_RESULT%" echo curl_return_code=%RES_CURL%
-if defined RES_PATH >>"%WR_GA_RESULT%" echo path=%RES_PATH%
+:FAIL
+set "GF_RC=%~1"
+set "GF_REASON=%~2"
+>"%GA_RESULT%" echo status=FAIL
+>>"%GA_RESULT%" echo reason=%GF_REASON%
+>>"%GA_RESULT%" echo http=%GA_LAST_HTTP%
+>>"%GA_RESULT%" echo curl_return_code=%GA_LAST_CURL%
+>>"%GA_RESULT%" echo transport=HTTPS_TLS
 exit /b 0
