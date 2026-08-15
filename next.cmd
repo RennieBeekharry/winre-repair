@@ -2,11 +2,11 @@
 setlocal EnableExtensions EnableDelayedExpansion
 rem WR_RISK=REPAIR_WRITE
 rem WR_LOCAL_AUTH=NOT_REQUIRED
-rem WR_ACTION=START_RESCUEMEAI_DUAL_FORMAT_AUTH_V31
+rem WR_ACTION=START_RESCUEMEAI_AUTH_AUTO_RENEW_V32
 rem WR_TARGET=RescueMeAI authentication and persistent agent only.
 rem WR_CONSEQUENCE=Renews private recovery-channel authorization and stages corrected agent auth. No Windows recovery state is changed.
 
-set "COMMAND_VERSION=RMAI-2026.08.15-AGENT-START-31"
+set "COMMAND_VERSION=RMAI-2026.08.15-AGENT-START-32"
 set "WORK=C:\WinRERepair"
 set "RUNTIME=%WORK%\runtime"
 set "AUTHDIR=%WORK%\.auth"
@@ -21,8 +21,8 @@ if not exist "%CSCRIPT%" set "CSCRIPT=C:\Windows\System32\cscript.exe"
 set "PING=X:\Windows\System32\ping.exe"
 if not exist "%PING%" set "PING=C:\Windows\System32\ping.exe"
 set "HELPER=%WORK%\start23-json.js"
-set "JOUT=%WORK%\start31-jget.txt"
-set "FAILFILE=%WORK%\START31_FAILURE.txt"
+set "JOUT=%WORK%\start32-jget.txt"
+set "FAILFILE=%WORK%\START32_FAILURE.txt"
 set "CLIENT_ID=Iv23lif9UoXW4QvUh8tJ"
 set "APP_ID=4595411"
 set "LOG_REPO=RennieBeekharry/winre-repair-logs"
@@ -43,8 +43,9 @@ set "RESPONSE_FORMAT=UNKNOWN"
 set "CONTENT_TYPE=UNKNOWN"
 set "BODY_BYTES=0"
 set "BODY_HAS_DEVICE=UNKNOWN"
-set "LAST_SUCCESS=START-31 entered"
-set "ERROR_ID=RMAI-START31-UNKNOWN"
+set "AUTH_CYCLE=0"
+set "LAST_SUCCESS=START-32 entered"
+set "ERROR_ID=RMAI-START32-UNKNOWN"
 set "ERROR_STAGE=STARTUP"
 set "ERROR_COMPONENT=bootstrap"
 set "ERROR_OPERATION=initialization"
@@ -56,7 +57,7 @@ if not exist "%AUTHDIR%" md "%AUTHDIR%" >nul 2>&1
 if exist "%FAILFILE%" del /f /q /a "%FAILFILE%" >nul 2>&1
 
 for %%F in ("%CURL%" "%FINDSTR%" "%CSCRIPT%" "%PING%" "%AGENT%" "%HELPER%") do if not exist %%F (
-  set "ERROR_ID=RMAI-START31-DEP-001"
+  set "ERROR_ID=RMAI-START32-DEP-001"
   set "ERROR_STAGE=STARTUP"
   set "ERROR_COMPONENT=dependencies"
   set "ERROR_OPERATION=validate required local components"
@@ -64,7 +65,7 @@ for %%F in ("%CURL%" "%FINDSTR%" "%CSCRIPT%" "%PING%" "%AGENT%" "%HELPER%") do i
   goto :FATAL
 )
 for %%F in (network.cmd resolve.cmd reporting.cmd safety.cmd agent-core.js ui.cmd) do if not exist "%RUNTIME%\%%F" (
-  set "ERROR_ID=RMAI-START31-RUNTIME-001"
+  set "ERROR_ID=RMAI-START32-RUNTIME-001"
   set "ERROR_STAGE=STARTUP"
   set "ERROR_COMPONENT=runtime"
   set "ERROR_OPERATION=validate staged runtime"
@@ -78,7 +79,7 @@ if not errorlevel 1 set "TLS=--ssl-revoke-best-effort"
 if exist "%WORK%\github-api-ip.txt" set /p "APIIP="<"%WORK%\github-api-ip.txt"
 if exist "%WORK%\github-web-ip.txt" set /p "WEBIP="<"%WORK%\github-web-ip.txt"
 if not defined APIIP (
-  set "ERROR_ID=RMAI-START31-ROUTE-001"
+  set "ERROR_ID=RMAI-START32-ROUTE-001"
   set "ERROR_STAGE=NETWORK ROUTE"
   set "ERROR_COMPONENT=api.github.com"
   set "ERROR_OPERATION=load validated cached route"
@@ -86,7 +87,7 @@ if not defined APIIP (
   goto :FATAL
 )
 if not defined WEBIP (
-  set "ERROR_ID=RMAI-START31-ROUTE-002"
+  set "ERROR_ID=RMAI-START32-ROUTE-002"
   set "ERROR_STAGE=NETWORK ROUTE"
   set "ERROR_COMPONENT=github.com"
   set "ERROR_OPERATION=load validated cached route"
@@ -95,64 +96,67 @@ if not defined WEBIP (
 )
 set "LAST_SUCCESS=Validated cached GitHub HTTPS routes loaded"
 
-rem Prove both parser paths locally.
->"%WORK%\start31-selftest.json" echo {"device_code":"JSON_OK"}
-call :GET_VALUE "%WORK%\start31-selftest.json" device_code SELFTEST
+rem Prove both response parser paths locally before contacting GitHub.
+set "ERROR_STAGE=AUTH PARSER SELF-TEST"
+set "ERROR_COMPONENT=%HELPER%"
+set "ERROR_OPERATION=parse synthetic JSON response"
+>"%WORK%\start32-selftest.json" echo {"device_code":"JSON_OK"}
+call :GET_VALUE "%WORK%\start32-selftest.json" device_code SELFTEST
 if errorlevel 1 (
-  set "ERROR_ID=RMAI-START31-PARSER-JSON-001"
-  set "ERROR_STAGE=AUTH PARSER SELF-TEST"
-  set "ERROR_COMPONENT=%HELPER%"
-  set "ERROR_OPERATION=parse synthetic JSON response"
+  set "ERROR_ID=RMAI-START32-PARSER-JSON-001"
   set "FAIL_REASON=The JSON parser failed its local self-test."
   goto :FATAL
 )
 if /i not "!SELFTEST!"=="JSON_OK" (
-  set "ERROR_ID=RMAI-START31-PARSER-JSON-002"
+  set "ERROR_ID=RMAI-START32-PARSER-JSON-002"
   set "FAIL_REASON=The JSON parser returned the wrong self-test value."
   goto :FATAL
 )
->"%WORK%\start31-selftest.form" echo device_code=FORM_OK^&user_code=ABCD-EFGH^&expires_in=900^&interval=5
-call :FORM_GET "%WORK%\start31-selftest.form" device_code SELFTEST_FORM
+set "ERROR_COMPONENT=CMD form parser"
+set "ERROR_OPERATION=parse synthetic form-encoded response"
+>"%WORK%\start32-selftest.form" echo device_code=FORM_OK^&user_code=ABCD-EFGH^&expires_in=900^&interval=5
+call :FORM_GET "%WORK%\start32-selftest.form" device_code SELFTEST_FORM
 if errorlevel 1 (
-  set "ERROR_ID=RMAI-START31-PARSER-FORM-001"
-  set "ERROR_STAGE=AUTH PARSER SELF-TEST"
-  set "ERROR_COMPONENT=CMD form parser"
-  set "ERROR_OPERATION=parse synthetic form-encoded response"
+  set "ERROR_ID=RMAI-START32-PARSER-FORM-001"
   set "FAIL_REASON=The form parser failed its local self-test."
   goto :FATAL
 )
 if /i not "!SELFTEST_FORM!"=="FORM_OK" (
-  set "ERROR_ID=RMAI-START31-PARSER-FORM-002"
+  set "ERROR_ID=RMAI-START32-PARSER-FORM-002"
   set "FAIL_REASON=The form parser returned the wrong self-test value."
   goto :FATAL
 )
 set "LAST_SUCCESS=JSON and form-encoded parser self-tests passed"
 
+goto :REQUEST_DEVICE
+
+:REQUEST_DEVICE
+set /a AUTH_CYCLE+=1
 set "ERROR_STAGE=DEVICE AUTHORIZATION"
 set "ERROR_COMPONENT=GitHub device-code endpoint"
 set "ERROR_OPERATION=request fresh device authorization metadata"
-set "DEV=%WORK%\start31-device-response.txt"
-set "DEVHTTP=%WORK%\start31-device-http.txt"
-set "DEVHEAD=%WORK%\start31-device-headers.txt"
+set "DEV=%WORK%\start32-device-response.txt"
+set "DEVHTTP=%WORK%\start32-device-http.txt"
+set "DEVHEAD=%WORK%\start32-device-headers.txt"
 for %%F in ("%DEV%" "%DEVHTTP%" "%DEVHEAD%") do if exist %%F del /f /q %%F >nul 2>&1
-"%CURL%" %TLS% --silent --show-error --connect-timeout 15 --max-time 120 --resolve "github.com:443:%WEBIP%" -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "client_id=%CLIENT_ID%" -D "%DEVHEAD%" "https://github.com/login/device/code" -o "%DEV%" -w "%%{http_code}" >"%DEVHTTP%" 2>"%WORK%\start31-device-curl.txt"
+"%CURL%" %TLS% --silent --show-error --connect-timeout 15 --max-time 120 --resolve "github.com:443:%WEBIP%" -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "client_id=%CLIENT_ID%" -D "%DEVHEAD%" "https://github.com/login/device/code" -o "%DEV%" -w "%%{http_code}" >"%DEVHTTP%" 2>"%WORK%\start32-device-curl.txt"
 set "LAST_CURL=!errorlevel!"
 set "LAST_HTTP="
 if exist "%DEVHTTP%" set /p "LAST_HTTP="<"%DEVHTTP%"
 call :INSPECT_RESPONSE "%DEV%" "%DEVHEAD%"
 if not "!LAST_CURL!"=="0" (
-  set "ERROR_ID=RMAI-START31-OAUTH-HTTP-001"
+  set "ERROR_ID=RMAI-START32-OAUTH-HTTP-001"
   set "FAIL_REASON=GitHub device-code request failed over HTTPS."
   goto :FATAL
 )
 if not "!LAST_HTTP!"=="200" (
-  set "ERROR_ID=RMAI-START31-OAUTH-HTTP-002"
+  set "ERROR_ID=RMAI-START32-OAUTH-HTTP-002"
   set "FAIL_REASON=GitHub device-code endpoint did not return HTTP 200."
   goto :FATAL
 )
 call :GET_VALUE "%DEV%" device_code DEVICE_CODE
 if errorlevel 1 (
-  set "ERROR_ID=RMAI-START31-OAUTH-PARSE-001"
+  set "ERROR_ID=RMAI-START32-OAUTH-PARSE-001"
   set "ERROR_COMPONENT=GitHub device-code response"
   set "ERROR_OPERATION=parse device_code from JSON or form response"
   set "FAIL_REASON=GitHub returned HTTP 200, but neither supported response parser found device_code."
@@ -161,7 +165,7 @@ if errorlevel 1 (
 set "DEVICE_FORMAT=!RESPONSE_FORMAT!"
 call :GET_VALUE "%DEV%" user_code USER_CODE
 if errorlevel 1 (
-  set "ERROR_ID=RMAI-START31-OAUTH-PARSE-002"
+  set "ERROR_ID=RMAI-START32-OAUTH-PARSE-002"
   set "FAIL_REASON=GitHub returned device metadata, but user_code could not be parsed."
   goto :FATAL
 )
@@ -178,27 +182,31 @@ if !MAX! LSS 10 set "MAX=180"
 set /a COUNT=0
 set "POLL_STATE=Waiting for approval on your phone"
 
+goto :DEVICE_POLL
+
 :DEVICE_POLL
 set /a COUNT+=1
 if !COUNT! GTR !MAX! (
-  set "ERROR_ID=RMAI-START31-OAUTH-EXPIRED-001"
-  set "FAIL_REASON=GitHub device authorization expired before approval completed."
-  goto :FATAL
+  set "POLL_STATE=Previous code expired. Generating a fresh code automatically."
+  goto :REQUEST_DEVICE
 )
+set "ERROR_STAGE=DEVICE AUTHORIZATION"
+set "ERROR_COMPONENT=GitHub OAuth token polling"
+set "ERROR_OPERATION=wait for local device-code approval"
 call :SHOW_DEVICE
 call :WAIT_SECONDS !INTERVAL!
 if errorlevel 1 (
-  set "ERROR_ID=RMAI-START31-WAIT-001"
+  set "ERROR_ID=RMAI-START32-WAIT-001"
   set "ERROR_COMPONENT=ping.exe wait mechanism"
   set "ERROR_OPERATION=wait between authorization polls"
   set "FAIL_REASON=WinRE could not perform the safe polling delay."
   goto :FATAL
 )
-set "TOK=%WORK%\start31-token-response.txt"
-set "TOKHTTP=%WORK%\start31-token-http.txt"
-set "TOKHEAD=%WORK%\start31-token-headers.txt"
+set "TOK=%WORK%\start32-token-response.txt"
+set "TOKHTTP=%WORK%\start32-token-http.txt"
+set "TOKHEAD=%WORK%\start32-token-headers.txt"
 for %%F in ("%TOK%" "%TOKHTTP%" "%TOKHEAD%") do if exist %%F del /f /q %%F >nul 2>&1
-"%CURL%" %TLS% --silent --show-error --connect-timeout 15 --max-time 120 --resolve "github.com:443:%WEBIP%" -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "client_id=%CLIENT_ID%" --data-urlencode "device_code=!DEVICE_CODE!" --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:device_code" -D "%TOKHEAD%" "https://github.com/login/oauth/access_token" -o "%TOK%" -w "%%{http_code}" >"%TOKHTTP%" 2>"%WORK%\start31-token-curl.txt"
+"%CURL%" %TLS% --silent --show-error --connect-timeout 15 --max-time 120 --resolve "github.com:443:%WEBIP%" -X POST -H "Accept: application/json" -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "client_id=%CLIENT_ID%" --data-urlencode "device_code=!DEVICE_CODE!" --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:device_code" -D "%TOKHEAD%" "https://github.com/login/oauth/access_token" -o "%TOK%" -w "%%{http_code}" >"%TOKHTTP%" 2>"%WORK%\start32-token-curl.txt"
 set "LAST_CURL=!errorlevel!"
 set "LAST_HTTP="
 if exist "%TOKHTTP%" set /p "LAST_HTTP="<"%TOKHTTP%"
@@ -224,14 +232,17 @@ if /i "!OAUTH_ERROR!"=="slow_down" (
   set "POLL_STATE=GitHub requested slower polling; interval increased"
   goto :DEVICE_POLL
 )
-if /i "!OAUTH_ERROR!"=="access_denied" (
-  set "ERROR_ID=RMAI-START31-OAUTH-DENIED-001"
-  set "FAIL_REASON=GitHub device authorization was denied."
-  goto :FATAL
-)
 if /i "!OAUTH_ERROR!"=="expired_token" (
-  set "ERROR_ID=RMAI-START31-OAUTH-EXPIRED-002"
-  set "FAIL_REASON=GitHub device authorization code expired."
+  set "POLL_STATE=Previous code expired. Generating a fresh code automatically."
+  goto :REQUEST_DEVICE
+)
+if /i "!OAUTH_ERROR!"=="incorrect_device_code" (
+  set "POLL_STATE=GitHub rejected the old device code. Generating a fresh code automatically."
+  goto :REQUEST_DEVICE
+)
+if /i "!OAUTH_ERROR!"=="access_denied" (
+  set "ERROR_ID=RMAI-START32-OAUTH-DENIED-001"
+  set "FAIL_REASON=GitHub device authorization was explicitly denied."
   goto :FATAL
 )
 set "POLL_STATE=GitHub response received; waiting for authorization completion"
@@ -250,20 +261,20 @@ set "LAST_SUCCESS=GitHub returned a candidate credential parsed as !TOKEN_RESPON
 set "ERROR_STAGE=TOKEN VALIDATION"
 set "ERROR_COMPONENT=GitHub user identity"
 set "ERROR_OPERATION=authenticate candidate credential against GET /user"
-set "OUT=%WORK%\start31-user-test.json"
-set "HTTP=%WORK%\start31-user-test-http.txt"
-"%CURL%" %TLS% --silent --show-error --connect-timeout 15 --max-time 60 --resolve "api.github.com:443:%APIIP%" -H "Accept: application/vnd.github+json" -H "Authorization: Bearer !CANDIDATE_ACCESS!" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/user" -o "%OUT%" -w "%%{http_code}" >"%HTTP%" 2>"%WORK%\start31-user-test-curl.txt"
+set "OUT=%WORK%\start32-user-test.json"
+set "HTTP=%WORK%\start32-user-test-http.txt"
+"%CURL%" %TLS% --silent --show-error --connect-timeout 15 --max-time 60 --resolve "api.github.com:443:%APIIP%" -H "Accept: application/vnd.github+json" -H "Authorization: Bearer !CANDIDATE_ACCESS!" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/user" -o "%OUT%" -w "%%{http_code}" >"%HTTP%" 2>"%WORK%\start32-user-test-curl.txt"
 set "LAST_CURL=!errorlevel!"
 set "IDENTITY_HTTP="
 if exist "%HTTP%" set /p "IDENTITY_HTTP="<"%HTTP%"
 set "LAST_HTTP=!IDENTITY_HTTP!"
 if not "!LAST_CURL!"=="0" (
-  set "ERROR_ID=RMAI-START31-IDENTITY-NET-001"
+  set "ERROR_ID=RMAI-START32-IDENTITY-NET-001"
   set "FAIL_REASON=Candidate credential identity validation failed at the HTTPS transport layer."
   goto :FATAL
 )
 if not "!IDENTITY_HTTP!"=="200" (
-  set "ERROR_ID=RMAI-START31-IDENTITY-001"
+  set "ERROR_ID=RMAI-START32-IDENTITY-001"
   set "FAIL_REASON=GitHub rejected the candidate credential during GET /user validation."
   goto :FATAL
 )
@@ -271,60 +282,59 @@ set "LAST_SUCCESS=Candidate credential authenticated successfully against GitHub
 
 set "ERROR_COMPONENT=private GitHub recovery repository"
 set "ERROR_OPERATION=verify private recovery repository access"
-set "OUT=%WORK%\start31-repo-test.json"
-set "HTTP=%WORK%\start31-repo-test-http.txt"
-"%CURL%" %TLS% --silent --show-error --connect-timeout 15 --max-time 60 --resolve "api.github.com:443:%APIIP%" -H "Accept: application/vnd.github+json" -H "Authorization: Bearer !CANDIDATE_ACCESS!" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repositories/%LOG_REPO_ID%" -o "%OUT%" -w "%%{http_code}" >"%HTTP%" 2>"%WORK%\start31-repo-test-curl.txt"
+set "OUT=%WORK%\start32-repo-test.json"
+set "HTTP=%WORK%\start32-repo-test-http.txt"
+"%CURL%" %TLS% --silent --show-error --connect-timeout 15 --max-time 60 --resolve "api.github.com:443:%APIIP%" -H "Accept: application/vnd.github+json" -H "Authorization: Bearer !CANDIDATE_ACCESS!" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repositories/%LOG_REPO_ID%" -o "%OUT%" -w "%%{http_code}" >"%HTTP%" 2>"%WORK%\start32-repo-test-curl.txt"
 set "LAST_CURL=!errorlevel!"
 set "REPO_HTTP="
 if exist "%HTTP%" set /p "REPO_HTTP="<"%HTTP%"
 set "LAST_HTTP=!REPO_HTTP!"
 if not "!LAST_CURL!"=="0" (
-  set "ERROR_ID=RMAI-START31-REPO-NET-001"
+  set "ERROR_ID=RMAI-START32-REPO-NET-001"
   set "FAIL_REASON=Private repository validation failed at the HTTPS transport layer."
   goto :FATAL
 )
 if not "!REPO_HTTP!"=="200" (
-  set "ERROR_ID=RMAI-START31-REPO-001"
+  set "ERROR_ID=RMAI-START32-REPO-001"
   set "FAIL_REASON=GitHub accepted the user identity, but the credential cannot access the private recovery repository."
   goto :FATAL
 )
 set "LAST_SUCCESS=Candidate credential validated for identity and private recovery repository"
 
-rem Stage corrected agent-side auth while the validated credential is still in memory.
 set "ERROR_STAGE=RUNTIME HANDOFF"
 set "ERROR_COMPONENT=github-auth.cmd"
 set "ERROR_OPERATION=stage corrected launcher-to-agent authentication module"
 set "NEWAUTH=%WORK%\github-auth-v3-stage.cmd"
-set "AUTHHTTP=%WORK%\start31-auth-stage-http.txt"
-"%CURL%" %TLS% --silent --show-error --connect-timeout 15 --max-time 120 --resolve "api.github.com:443:%APIIP%" -H "Accept: application/vnd.github.raw+json" -H "Authorization: Bearer !CANDIDATE_ACCESS!" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/%SOURCE_REPO%/contents/lib/github-auth.cmd?ref=%AUTH_REF%" -o "%NEWAUTH%" -w "%%{http_code}" >"%AUTHHTTP%" 2>"%WORK%\start31-auth-stage-curl.txt"
+set "AUTHHTTP=%WORK%\start32-auth-stage-http.txt"
+"%CURL%" %TLS% --silent --show-error --connect-timeout 15 --max-time 120 --resolve "api.github.com:443:%APIIP%" -H "Accept: application/vnd.github.raw+json" -H "Authorization: Bearer !CANDIDATE_ACCESS!" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/%SOURCE_REPO%/contents/lib/github-auth.cmd?ref=%AUTH_REF%" -o "%NEWAUTH%" -w "%%{http_code}" >"%AUTHHTTP%" 2>"%WORK%\start32-auth-stage-curl.txt"
 set "LAST_CURL=!errorlevel!"
 set "LAST_HTTP="
 if exist "%AUTHHTTP%" set /p "LAST_HTTP="<"%AUTHHTTP%"
 if not "!LAST_CURL!"=="0" (
-  set "ERROR_ID=RMAI-START31-HANDOFF-DOWNLOAD-001"
+  set "ERROR_ID=RMAI-START32-HANDOFF-DOWNLOAD-001"
   set "FAIL_REASON=The corrected agent authorization module could not be downloaded over validated HTTPS."
   goto :FATAL
 )
 if not "!LAST_HTTP!"=="200" (
-  set "ERROR_ID=RMAI-START31-HANDOFF-DOWNLOAD-002"
+  set "ERROR_ID=RMAI-START32-HANDOFF-DOWNLOAD-002"
   set "FAIL_REASON=GitHub did not return HTTP 200 for the corrected agent authorization module."
   goto :FATAL
 )
 "%FINDSTR%" /i /c:"WR-MODULE: github-auth 2026.08.15-V3-LAUNCHER-HANDOFF" "%NEWAUTH%" >nul 2>&1
 if errorlevel 1 (
-  set "ERROR_ID=RMAI-START31-HANDOFF-MARKER-001"
+  set "ERROR_ID=RMAI-START32-HANDOFF-MARKER-001"
   set "FAIL_REASON=The staged agent authorization module failed marker validation."
   goto :FATAL
 )
 copy /y "%NEWAUTH%" "%RUNTIME%\github-auth.cmd" >nul 2>&1
 if errorlevel 1 (
-  set "ERROR_ID=RMAI-START31-HANDOFF-COPY-001"
+  set "ERROR_ID=RMAI-START32-HANDOFF-COPY-001"
   set "FAIL_REASON=The corrected agent authorization module could not replace the old runtime copy."
   goto :FATAL
 )
 set "LAST_SUCCESS=Corrected agent authorization handoff staged"
 
-rem Store only after API validation and runtime handoff preparation both passed.
+rem Save only the credential that GitHub has accepted for identity and private-repo access.
 if exist "%TOKEN%" copy /y "%TOKEN%" "%TOKEN%.previous" >nul 2>&1
 if exist "%REFRESH%" copy /y "%REFRESH%" "%REFRESH%.previous" >nul 2>&1
 >"%TOKEN%" echo(!CANDIDATE_ACCESS!
@@ -351,7 +361,7 @@ set "LAST_SUCCESS=Validated GitHub credential stored locally"
 >"%WORK%\session-version.txt" echo %COMMAND_VERSION%
 >"%RUNTIME%\runtime-sync.cmd" echo @echo off
 >>"%RUNTIME%\runtime-sync.cmd" echo setlocal EnableExtensions
->>"%RUNTIME%\runtime-sync.cmd" echo rem WR-MODULE: runtime-local-ready 2026.08.15-START-31
+>>"%RUNTIME%\runtime-sync.cmd" echo rem WR-MODULE: runtime-local-ready 2026.08.15-START-32
 >>"%RUNTIME%\runtime-sync.cmd" echo set "RUNTIME=C:\WinRERepair\runtime"
 >>"%RUNTIME%\runtime-sync.cmd" echo for %%%%F in ^(ui.cmd network.cmd resolve.cmd reporting.cmd github-auth.cmd safety.cmd agent-core.js^) do if not exist "%%RUNTIME%%\%%%%F" exit /b 91
 >>"%RUNTIME%\runtime-sync.cmd" echo exit /b 0
@@ -360,7 +370,7 @@ call :SCREEN "RECOVERY AGENT STARTING" "Authorization and private repository acc
 call "%AGENT%"
 set "ARC=!errorlevel!"
 if "!ARC!"=="0" exit /b 0
-set "ERROR_ID=RMAI-START31-AGENT-001"
+set "ERROR_ID=RMAI-START32-AGENT-001"
 set "ERROR_STAGE=AGENT START"
 set "ERROR_COMPONENT=wr-agent-v2.cmd"
 set "ERROR_OPERATION=start persistent recovery listener"
@@ -386,7 +396,7 @@ exit /b 1
 set "%~3="
 set "PARSER_RC=NOT_RUN"
 if exist "%JOUT%" del /f /q "%JOUT%" >nul 2>&1
-"%CSCRIPT%" //nologo "%HELPER%" "%~1" "%~2" >"%JOUT%" 2>"%WORK%\start31-jget-error.txt"
+"%CSCRIPT%" //nologo "%HELPER%" "%~1" "%~2" >"%JOUT%" 2>"%WORK%\start32-jget-error.txt"
 set "PARSER_RC=!errorlevel!"
 if not "!PARSER_RC!"=="0" exit /b 1
 set "JV="
@@ -460,13 +470,16 @@ echo.
 echo CURRENT STATE
 echo ----------------------------------------------------------------------------------------------------
 echo   !POLL_STATE!
-echo   Poll attempt: !COUNT! / !MAX!
-echo   Device-response format: !DEVICE_FORMAT!
+echo   Authorization cycle: !AUTH_CYCLE!
+echo   Poll attempt       : !COUNT! / !MAX!
+echo   Code lifetime      : approximately !EXPIRES! seconds
+echo   Response format    : !DEVICE_FORMAT!
 echo.
 echo WHAT HAPPENS NEXT
 echo ----------------------------------------------------------------------------------------------------
 echo   RescueMeAI detects approval automatically.
-echo   The returned credential is validated against GitHub identity and the private recovery repository
+echo   If this code expires, RescueMeAI generates a fresh code automatically and keeps waiting.
+echo   A returned credential is validated against GitHub identity and the private recovery repository
 echo   BEFORE it is stored or handed to the recovery agent.
 echo   No Windows repair runs during authorization.
 echo.
@@ -511,6 +524,7 @@ exit /b 0
 >>"%FAILFILE%" echo token_prefix_class=%TOKEN_PREFIX%
 >>"%FAILFILE%" echo token_type=%TOKEN_TYPE%
 >>"%FAILFILE%" echo parser_return=%PARSER_RC%
+>>"%FAILFILE%" echo authorization_cycle=%AUTH_CYCLE%
 >>"%FAILFILE%" echo api_cached_ip=%APIIP%
 >>"%FAILFILE%" echo web_cached_ip=%WEBIP%
 >>"%FAILFILE%" echo windows_changes=NONE
@@ -546,6 +560,7 @@ echo Body had key      : device_code=%BODY_HAS_DEVICE%
 echo Token prefix class: %TOKEN_PREFIX%
 echo Token type        : %TOKEN_TYPE%
 echo Parser return     : %PARSER_RC%
+echo Auth cycle        : %AUTH_CYCLE%
 echo API cached IP     : %APIIP%
 echo Web cached IP     : %WEBIP%
 echo.
