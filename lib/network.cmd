@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-rem WR-MODULE: network 2026.08.14-1605-ET
+rem WR-MODULE: network 2026.08.15-SECURE-TLS-1
 if /i "%~1"=="ensure" goto :ENSURE
 if /i "%~1"=="fetch" goto :FETCH
 exit /b 64
@@ -44,16 +44,16 @@ if /i "%WR_NET_HOST%"=="api.github.com" if exist "%WR_NET_TOKENFILE%" set /p "WR
 
 if defined WR_NET_IP (
   if defined WR_NET_TOKEN (
-    "%WR_NET_CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --resolve "%WR_NET_HOST%:443:%WR_NET_IP%" -H "Accept: application/vnd.github.raw+json" -H "Authorization: Bearer !WR_NET_TOKEN!" -H "X-GitHub-Api-Version: 2022-11-28" -H "Cache-Control: no-cache, no-store, max-age=0" "%WR_NET_URL%" -o "%WR_NET_OUT%"
+    "%WR_NET_CURL%" --ssl-revoke-best-effort --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --resolve "%WR_NET_HOST%:443:%WR_NET_IP%" -H "Accept: application/vnd.github.raw+json" -H "Authorization: Bearer !WR_NET_TOKEN!" -H "X-GitHub-Api-Version: 2022-11-28" -H "Cache-Control: no-cache, no-store, max-age=0" "%WR_NET_URL%" -o "%WR_NET_OUT%"
     if errorlevel 1 (
       if exist "%WR_NET_OUT%" del /f /q "%WR_NET_OUT%" >nul 2>&1
-      "%WR_NET_CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --resolve "%WR_NET_HOST%:443:%WR_NET_IP%" -H "Accept: application/vnd.github.raw+json" -H "Cache-Control: no-cache, no-store, max-age=0" "%WR_NET_URL%" -o "%WR_NET_OUT%"
+      "%WR_NET_CURL%" --ssl-revoke-best-effort --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --resolve "%WR_NET_HOST%:443:%WR_NET_IP%" -H "Accept: application/vnd.github.raw+json" -H "Cache-Control: no-cache, no-store, max-age=0" "%WR_NET_URL%" -o "%WR_NET_OUT%"
     )
   ) else (
-    "%WR_NET_CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --resolve "%WR_NET_HOST%:443:%WR_NET_IP%" -H "Accept: application/vnd.github.raw+json" -H "Cache-Control: no-cache, no-store, max-age=0" "%WR_NET_URL%" -o "%WR_NET_OUT%"
+    "%WR_NET_CURL%" --ssl-revoke-best-effort --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --resolve "%WR_NET_HOST%:443:%WR_NET_IP%" -H "Accept: application/vnd.github.raw+json" -H "Cache-Control: no-cache, no-store, max-age=0" "%WR_NET_URL%" -o "%WR_NET_OUT%"
   )
 ) else (
-  "%WR_NET_CURL%" --ssl-no-revoke --fail --location --silent --show-error --connect-timeout 15 --max-time 180 -H "Cache-Control: no-cache, no-store, max-age=0" "%WR_NET_URL%" -o "%WR_NET_OUT%"
+  "%WR_NET_CURL%" --ssl-revoke-best-effort --fail --location --silent --show-error --connect-timeout 15 --max-time 180 -H "Cache-Control: no-cache, no-store, max-age=0" "%WR_NET_URL%" -o "%WR_NET_OUT%"
 )
 if errorlevel 1 exit /b 90
 if not exist "%WR_NET_OUT%" exit /b 90
