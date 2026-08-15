@@ -2,18 +2,19 @@
 setlocal EnableExtensions EnableDelayedExpansion
 rem WR_RISK=REPAIR_WRITE
 rem WR_LOCAL_AUTH=NOT_REQUIRED
-rem WR_SUMMARY=Resume the paired RescueMeAI agent using the already-staged validated runtime and refresh the private GitHub authorization before reconnecting.
+rem WR_SUMMARY=Resume the paired RescueMeAI agent after validating both GitHub endpoints and refreshing authorization.
 rem WR_ACTION=START_RESCUEMEAI_AGENT_LOCAL_RUNTIME
 rem WR_TARGET=RescueMeAI runtime bootstrap and private command channel only.
 rem WR_CONSEQUENCE=Refreshes RescueMeAI authorization and resumes the recovery agent. It does not modify Windows recovery state.
 rem WR_ROLLBACK=Stop RescueMeAI safely while waiting and return to Command Prompt.
 
-set "COMMAND_VERSION=RMAI-2026.08.14-AGENT-START-9"
+set "COMMAND_VERSION=RMAI-2026.08.14-AGENT-START-10"
 set "WORK=C:\WinRERepair"
 set "RUNTIME=%WORK%\runtime"
 set "CONFIG=%WORK%\agent.cfg"
 set "AGENT=C:\wr-agent-v2.cmd"
 set "AUTH=%RUNTIME%\github-auth.cmd"
+set "RESOLVE=%RUNTIME%\resolve.cmd"
 set "BOOTSTRAP=%RUNTIME%\runtime-sync.cmd"
 set "LOG_REPO=RennieBeekharry/winre-repair-logs"
 set "LOG_REPO_ID=1333818657"
@@ -25,6 +26,8 @@ set "MODE=C:\Windows\System32\mode.com"
 if not exist "%MODE%" set "MODE=mode"
 set "FAIL_RC=91"
 set "FAIL_REASON=RescueMeAI could not resume the saved recovery session."
+set "APIIP="
+set "WEBIP="
 set "UI_BORDER================================================================================================="
 set "UI_RULE=------------------------------------------------------------------------------------------------"
 
@@ -45,7 +48,7 @@ for %%F in (ui.cmd network.cmd resolve.cmd reporting.cmd github-auth.cmd safety.
   )
 )
 
-call :SHOW_ACTIVITY "Preparing local bootstrap" "Removing the unnecessary bootstrap download that failed previously."
+call :SHOW_ACTIVITY "Preparing local bootstrap" "Using the already-staged runtime without another bootstrap download."
 >"%BOOTSTRAP%" echo @echo off
 >>"%BOOTSTRAP%" echo setlocal EnableExtensions
 >>"%BOOTSTRAP%" echo rem WR-MODULE: runtime-local-ready 2026.08.14-1555-ET
@@ -69,8 +72,24 @@ if not exist "%BOOTSTRAP%" (
 >>"%CONFIG%" echo SOURCE_REPO=%SOURCE_REPO%
 >>"%CONFIG%" echo SOURCE_REF=%SOURCE_REF%
 
+call :SHOW_ACTIVITY "Checking GitHub API route" "Resolving and validating api.github.com before authorization."
+call "%RESOLVE%" resolve api.github.com APIIP
+if errorlevel 1 (
+  set "FAIL_RC=92"
+  set "FAIL_REASON=RescueMeAI could not establish a validated route to api.github.com."
+  goto :APP_FATAL
+)
+
+call :SHOW_ACTIVITY "Checking GitHub authorization route" "Resolving and validating github.com before token refresh."
+call "%RESOLVE%" resolve github.com WEBIP
+if errorlevel 1 (
+  set "FAIL_RC=92"
+  set "FAIL_REASON=RescueMeAI could not establish a validated route to github.com."
+  goto :APP_FATAL
+)
+
 call :SHOW_ACTIVITY "Refreshing secure command channel" "Validating or refreshing the saved GitHub App authorization."
-call "%AUTH%" authorize "%CONFIG%"
+call "%AUTH%" authorize
 if errorlevel 1 (
   set "FAIL_RC=!errorlevel!"
   set "FAIL_REASON=RescueMeAI could not validate or refresh the private GitHub authorization."
@@ -93,7 +112,7 @@ echo.
 echo                              ACTION REQUIRED
 echo %UI_RULE%
 echo.
-echo RescueMeAI has restored the recovery runtime and secure command channel.
+echo RescueMeAI has restored the secure recovery command channel.
 echo The queued Windows repair has NOT run yet.
 echo.
 echo TO CONTINUE:
@@ -174,7 +193,14 @@ echo Windows changes : STOPPED
 echo %UI_BORDER%
 echo !FAIL_REASON!
 echo.
+if exist "%WORK%\GITHUB_RESULT.txt" (
+  echo LOCAL GITHUB DETAIL
+  echo %UI_RULE%
+  type "%WORK%\GITHUB_RESULT.txt"
+  echo.
+)
 echo ACTION REQUIRED: return to ChatGPT and send exactly: fail
+echo If the detail above is visible, include its short message in your reply.
 echo This screen will remain until you press a key.
 pause >nul
 goto :RETURN_CMD
