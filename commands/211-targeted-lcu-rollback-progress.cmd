@@ -29,7 +29,7 @@ echo                     The exact installed RollupFix package is 26100.9168.1.1
 echo CURRENT TASK      : Rolling back that exact cumulative-update package.
 echo SAFETY            : REPAIR-WRITE - Windows system components will change.
 echo PERSONAL FILES    : NOT TARGETED
-echo RESET/FORMAT      : NO
+echo FULL RESET       : NO
 echo SCREENSHOT NEEDED : NO - wait for the final status below.
 echo ================================================================================
 echo.
