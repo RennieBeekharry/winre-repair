@@ -1,0 +1,158 @@
+@echo off
+setlocal EnableExtensions EnableDelayedExpansion
+rem WR_RISK=READ_ONLY
+rem WR_LOCAL_AUTH=NOT_REQUIRED
+rem WR_SUMMARY=Inspect the boot path after the stalled controlled boot test without changing Windows.
+rem WR_ACTION=POST_HANG_BOOT_PATH_DIAGNOSTIC
+rem WR_TARGET=Offline Windows C:\Windows boot, servicing, BCD, and Startup Repair evidence only.
+rem WR_CONSEQUENCE=Reads boot and servicing state and writes diagnostic text only under C:\WinRERepair. No Windows repair, reboot, registry change, package install, or personal-file operation is performed.
+rem WR_ROLLBACK=Not applicable; this command is read-only.
+
+set "FIX_VERSION=RMAI-FIX-2026.09.10.1"
+set "STEP=30"
+set "WORK=C:\WinRERepair"
+set "DETAILS=%WORK%\RUN_DETAILS.txt"
+set "RESULT=%WORK%\COMMAND_RESULT.env"
+set "DISM=X:\Windows\System32\dism.exe"
+if not exist "%DISM%" set "DISM=C:\Windows\System32\dism.exe"
+set "BCDEDIT=X:\Windows\System32\bcdedit.exe"
+if not exist "%BCDEDIT%" set "BCDEDIT=C:\Windows\System32\bcdedit.exe"
+set "SRT=C:\Windows\System32\LogFiles\Srt\SrtTrail.txt"
+set "PKGOUT=%WORK%\diag30-packages.txt"
+set "PENDINGOUT=%WORK%\diag30-pending.txt"
+set "SRTFOCUS=%WORK%\diag30-srt-focus.txt"
+if not exist "%WORK%" md "%WORK%" >nul 2>&1
+
+cls
+echo ================================================================================
+echo RescueMeAI - POST-HANG BOOT PATH DIAGNOSTIC
+echo ================================================================================
+echo RECOVERY FIX        : %FIX_VERSION%
+echo STEP                : %STEP%
+echo STATUS              : RUNNING
+echo CURRENT DIAGNOSIS   : SFC repair and verification were clean, but Windows
+echo                       stalled at the HP loading screen during the boot test.
+echo CURRENT TASK        : Checking for a pending servicing/update state or other
+echo                       boot-path condition that can explain the stall.
+echo SAFETY              : READ-ONLY - no Windows repair is running in this step.
+echo PERSONAL FILES      : NOT TOUCHED
+echo REBOOT              : NO
+echo WHAT YOU SHOULD DO  : WAIT. Leave this window open and keep the laptop on power.
+echo SCREENSHOT REQUIRED : NO - wait for the final status below.
+echo ================================================================================
+
+>"%DETAILS%" echo RESCUEMEAI POST-HANG BOOT PATH DIAGNOSTIC
+>>"%DETAILS%" echo fix_version=%FIX_VERSION%
+>>"%DETAILS%" echo step=%STEP%
+
+echo.
+echo [1/6] Confirming the Windows target and permanent reconnect helper...
+set "TARGET=NO"
+set "RECONNECT=NO"
+if exist "C:\Windows\System32\config\SYSTEM" set "TARGET=YES"
+if exist "C:\r.cmd" if exist "C:\RescueMeAI\reconnect.cmd" set "RECONNECT=YES"
+>>"%DETAILS%" echo target_verified=!TARGET!
+>>"%DETAILS%" echo quick_reconnect_installed=!RECONNECT!
+if /i not "!TARGET!"=="YES" goto :FAIL
+
+echo [2/6] Checking boot manager and Windows loader configuration...
+set "BCD_DEFAULT_OK=UNKNOWN"
+set "BCD_OSDEVICE_OK=UNKNOWN"
+"%BCDEDIT%" /enum {default} >"%WORK%\diag30-bcd-default.txt" 2>&1
+if not errorlevel 1 (
+  findstr /i /c:"device                  partition=C:" "%WORK%\diag30-bcd-default.txt" >nul 2>&1 && set "BCD_DEFAULT_OK=YES"
+  findstr /i /c:"osdevice                partition=C:" "%WORK%\diag30-bcd-default.txt" >nul 2>&1 && set "BCD_OSDEVICE_OK=YES"
+)
+>>"%DETAILS%" echo bcd_device_c=!BCD_DEFAULT_OK!
+>>"%DETAILS%" echo bcd_osdevice_c=!BCD_OSDEVICE_OK!
+
+echo [3/6] Checking offline servicing package states...
+if exist "%PKGOUT%" del /f /q "%PKGOUT%" >nul 2>&1
+if exist "%PENDINGOUT%" del /f /q "%PENDINGOUT%" >nul 2>&1
+"%DISM%" /Image:C:\ /Get-Packages /Format:Table /English >"%PKGOUT%" 2>&1
+set "DISMRC=!errorlevel!"
+if exist "%PKGOUT%" findstr /i /c:"Pending" "%PKGOUT%" >"%PENDINGOUT%" 2>nul
+set "PENDING_ROWS=0"
+if exist "%PENDINGOUT%" for /f %%N in ('find /c /v "" ^< "%PENDINGOUT%"') do set "PENDING_ROWS=%%N"
+>>"%DETAILS%" echo dism_get_packages_exit=!DISMRC!
+>>"%DETAILS%" echo pending_package_rows=!PENDING_ROWS!
+
+echo [4/6] Checking pending servicing files...
+set "PENDING_XML=NO"
+set "REBOOT_XML=NO"
+if exist "C:\Windows\WinSxS\pending.xml" set "PENDING_XML=YES"
+if exist "C:\Windows\WinSxS\reboot.xml" set "REBOOT_XML=YES"
+>>"%DETAILS%" echo pending_xml_present=!PENDING_XML!
+>>"%DETAILS%" echo reboot_xml_present=!REBOOT_XML!
+if exist "C:\Windows\WinSxS\pending.xml" for %%Z in ("C:\Windows\WinSxS\pending.xml") do >>"%DETAILS%" echo pending_xml_bytes=%%~zZ
+
+echo [5/6] Reading the latest Startup Repair evidence...
+set "SRT_PRESENT=NO"
+set "SRT_FOCUS_LINES=0"
+if exist "%SRT%" (
+  set "SRT_PRESENT=YES"
+  findstr /i /c:"Root cause" /c:"corrupt" /c:"error code" /c:"repair action" /c:"boot critical" "%SRT%" >"%SRTFOCUS%" 2>nul
+  if exist "%SRTFOCUS%" for /f %%N in ('find /c /v "" ^< "%SRTFOCUS%"') do set "SRT_FOCUS_LINES=%%N"
+)
+>>"%DETAILS%" echo startup_repair_log_present=!SRT_PRESENT!
+>>"%DETAILS%" echo startup_repair_focus_lines=!SRT_FOCUS_LINES!
+
+echo [6/6] Recording the reviewed next-step decision...
+set "SERVICING_PENDING=NO"
+if not "!PENDING_ROWS!"=="0" set "SERVICING_PENDING=YES"
+if /i "!PENDING_XML!"=="YES" set "SERVICING_PENDING=YES"
+>>"%DETAILS%" echo servicing_pending_detected=!SERVICING_PENDING!
+>>"%DETAILS%" echo windows_changes_performed=NO
+>>"%DETAILS%" echo personal_files_targeted=NO
+if exist "%PENDINGOUT%" (
+  >>"%DETAILS%" echo.
+  >>"%DETAILS%" echo --- PENDING PACKAGE ROWS ---
+  for /f "usebackq delims=" %%L in ("%PENDINGOUT%") do >>"%DETAILS%" echo %%L
+)
+if exist "%SRTFOCUS%" (
+  >>"%DETAILS%" echo.
+  >>"%DETAILS%" echo --- STARTUP REPAIR FOCUS ---
+  for /f "usebackq delims=" %%L in ("%SRTFOCUS%") do >>"%DETAILS%" echo %%L
+)
+
+>"%RESULT%" echo STATUS=PASS
+>>"%RESULT%" echo MESSAGE=Post-hang boot-path diagnostic completed successfully.
+>>"%RESULT%" echo EVIDENCE=Fix %FIX_VERSION%; pending servicing detected=!SERVICING_PENDING!; pending package rows=!PENDING_ROWS!; pending.xml=!PENDING_XML!; BCD device C=!BCD_DEFAULT_OK!; osdevice C=!BCD_OSDEVICE_OK!.
+>>"%RESULT%" echo SCREENSHOT_REQUIRED=NO
+>>"%RESULT%" echo NEXT_STEP=RescueMeAI will review this bounded evidence before any additional repair or reboot.
+
+echo.
+echo ================================================================================
+echo RECOVERY FIX        : %FIX_VERSION%
+echo STEP                : %STEP%
+echo STATUS              : COMPLETE - DIAGNOSTIC SENT FOR REVIEW
+echo RESULT              : Boot-path and servicing evidence collected successfully.
+echo SERVICING PENDING   : !SERVICING_PENDING!
+echo PENDING PKG ROWS    : !PENDING_ROWS!
+echo PENDING.XML         : !PENDING_XML!
+echo QUICK RECONNECT     : !RECONNECT! ^(future command: C:\r.cmd^)
+echo WINDOWS CHANGES     : NONE
+echo REBOOT              : NO
+echo WHAT YOU SHOULD DO  : WAIT. Leave this window open.
+echo SCREENSHOT REQUIRED : NO
+echo HOW TO REPLY        : No reply is needed unless an unexpected error appears.
+echo                       If that happens, reply FAILED and attach a photo.
+echo ================================================================================
+exit /b 0
+
+:FAIL
+>"%RESULT%" echo STATUS=FAIL
+>>"%RESULT%" echo MESSAGE=Post-hang diagnostic stopped because C:\Windows could not be verified.
+>>"%RESULT%" echo EVIDENCE=No Windows changes were made.
+>>"%RESULT%" echo SCREENSHOT_REQUIRED=YES
+echo.
+echo ================================================================================
+echo RECOVERY FIX        : %FIX_VERSION%
+echo STEP                : %STEP%
+echo STATUS              : STOPPED - WINDOWS TARGET NOT VERIFIED
+echo WINDOWS CHANGES     : NONE
+echo REBOOT              : NO
+echo SCREENSHOT REQUIRED : YES
+echo WHAT YOU SHOULD DO  : Reply FAILED and send ChatGPT a photo of THIS screen.
+echo ================================================================================
+exit /b 90
